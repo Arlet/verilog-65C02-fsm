@@ -73,7 +73,7 @@ parameter
  * control bits
  */
 
-reg [5:0] state;
+reg [4:0] state;
 assign sync = (state == SYNC);
 reg [25:0] control;
 wire rot = control[25];
@@ -176,7 +176,8 @@ always @* begin
 end
 
 always @* begin
-    alu_out = 8'hAA;
+    alu_out = 8'hXX;
+	 alu_C = 1'bX;
     case( state )
         PHA0: alu_out = R;
         ZERO: alu_out = R;
@@ -227,7 +228,7 @@ reg [7:0] S = 8'hff;                   // stack pointer
 
 always @(posedge clk)
     case( state )
-        SYNC:   if( txs ) S <= X;
+        SYNC:   if( txs ) S <= R;
         BRK0:   S <= S - 1;
         BRK1:   S <= S - 1;
         BRK2:   S <= S - 1;
@@ -462,16 +463,16 @@ always @(posedge clk)
     cond_code <= IR[7:4];
 
 always @*
-    case( cond_code )
-        4'b0001: cond = ~N;
-        4'b0011: cond =  N;
-        4'b0101: cond = ~V;
-        4'b0111: cond =  V;
+    casez( cond_code )
+        4'b000?: cond = ~N;
+        4'b001?: cond =  N;
+        4'b010?: cond = ~V;
+        4'b011?: cond =  V;
         4'b1000: cond =  1;
         4'b1001: cond = ~C;
-        4'b1011: cond =  C;
-        4'b1101: cond = ~Z;
-        4'b1111: cond =  Z;
+        4'b101?: cond =  C;
+        4'b110?: cond = ~Z;
+        4'b111?: cond =  Z;
     endcase
 
 always @(posedge clk)
@@ -690,6 +691,7 @@ always @(posedge clk)
         IND0:  state <= IND1;
         IND1:  state <= JMP0;
         RST0:  state <= JMP0;
+     default:  state <= XXXX; // don't care;
     endcase
 
 /*
