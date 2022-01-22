@@ -10,7 +10,9 @@ A verilog model of the 65C02 CPU. The code is rewritten from scratch.
 The main design goal is to provide an easy understand implementation that has good performance
 
 ## Code
-Code is not yet complete. 
+Code is far from complete.  Right now it's in a 'proof of concept' stage where the address
+generation and ALU are done in a quick and dirty fashion to test some new ideas. Once I'm happy
+with the overall design, I can do some optimizations. 
 
 * cpu.v module is the top level. 
 
