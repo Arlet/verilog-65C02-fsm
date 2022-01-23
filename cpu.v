@@ -24,8 +24,8 @@ wire [7:0] ADL = AD[7:0];
 wire [7:0] PCH = PC[15:8];
 wire [7:0] PCL = PC[7:0];
 
-reg [7:0] AHL;
-reg [15:0] AB;                          // registered address
+reg [15:0] ADR;                         // registered address
+reg [7:0] DR;                           // data register, registered DI 
 wire [7:0] IR;                          // instruction register
 
 wire B = 1;
@@ -140,16 +140,22 @@ always @(posedge clk)
         regs[ctl_dst] <= alu_out;
 
 /*
- * Memory register
+ * Data register
  */
 
-reg [7:0] M;
 
 always @(posedge clk)
     case( state )
-        IMMI: M <= DI;
-        PLA0: M <= DI;
-        DATA: M <= DI;
+        IMMI: DR <= DI;
+        PLA0: DR <= DI;
+        DATA: DR <= DI;
+        ABS0: DR <= DI;
+        IDX0: DR <= DI;
+        IDX1: DR <= DI;
+        JMP0: DR <= DI;
+        IND0: DR <= DI;
+        JSR0: DR <= DI;
+        RTS1: DR <= DI;
     endcase
 
 /*
@@ -174,10 +180,10 @@ always @* begin
      */
     casez( alu_op[6:4] )
         3'b0?0: alu_ai = R;         // input from register file
-        3'b0?1: alu_ai = M;         // input from memory read
-        3'b100: alu_ai = R | M;     // ORA between register and memory
-        3'b101: alu_ai = R & M;     // AND between register and memory 
-        3'b110: alu_ai = R ^ M;     // EOR between register and memory 
+        3'b0?1: alu_ai = DR;        // input from data bus 
+        3'b100: alu_ai = R | DR;    // ORA between register and memory
+        3'b101: alu_ai = R & DR;    // AND between register and memory 
+        3'b110: alu_ai = R ^ DR;    // EOR between register and memory 
         3'b111: alu_ai = S;         // stack pointer (for TSX)
     endcase
     
@@ -185,10 +191,10 @@ always @* begin
      * determine ALU B input
      */
     casez( alu_op[3:2] )
-        2'b00: alu_bi =  0;         // for LDA, logic operations and INC
-        2'b01: alu_bi =  M;         // for ADC
+        2'b00: alu_bi = 0;          // for LDA, logic operations and INC
+        2'b01: alu_bi = DR;         // for ADC
         2'b10: alu_bi = ~0;         // for DEC
-        2'b11: alu_bi = ~M;         // for SBC/CMP
+        2'b11: alu_bi = ~DR;        // for SBC/CMP
     endcase
 
     /*
@@ -258,47 +264,36 @@ always @*
            BRK0: AD = {8'h01, S};
            BRK1: AD = {8'h01, S};
            BRK2: AD = {8'h01, S};
-           BRK3: AD = 16'hfffe;
+           BRK3: AD = PC;
            JSR0: AD = {8'h01, S};
            JSR1: AD = {8'h01, S};
            JSR2: AD = PC;
-           JSR3: AD = {DI, AHL};
+           JSR3: AD = {DI, DR};
            ZERO: AD = {8'h00, DI + XY};
            IDX0: AD = {8'h00, DI + XY};             // XY = X or Z
-           IDX1: AD = AB + 1;                       // XY = X or Z
-           IDX2: AD = {DI, AHL} + XY;               // XY = Y or Z
+           IDX1: AD = ADR + 1;                       // XY = X or Z
+           IDX2: AD = {DI, DR} + XY;               // XY = Y or Z
            DATA: AD = PC;
            ABS0: AD = PC;
-           ABS1: AD = {DI, AHL} + XY;
+           ABS1: AD = {DI, DR} + XY;
            JMP0: AD = PC;
-           JMP1: AD = {DI, AHL};
+           JMP1: AD = {DI, DR};
            IMMI: AD = PC;
            SYNC: AD = PC; 
-           RDWR: AD = AB;
+           RDWR: AD = ADR;
            PHA0: AD = {8'h01, S};
            PLA0: AD = {8'h01, S + 8'h01};
            RTI0: AD = {8'h01, S + 8'h01};
            RTS0: AD = {8'h01, S + 8'h01};
            RTS1: AD = {8'h01, S + 8'h01};
-           RTS2: AD = {DI, AHL} + !rti;
+           RTS2: AD = {DI, DR} + !rti;
            BRA0: if( !cond )      AD = PC;
                  else if( DI[7] ) AD = PC + {8'hff, DI};
                  else             AD = PC + {8'h00, DI};
            IND0: AD = PC;
-           IND1: AD = {DI, AHL};
+           IND1: AD = {DI, DR};
            RST0: AD = PC;
         default: AD = 16'habcd;
-    endcase
-
-always @(posedge clk)
-    case( state )
-        ABS0: AHL <= DI;
-        IDX0: AHL <= DI;
-        IDX1: AHL <= DI;
-        JMP0: AHL <= DI;
-        IND0: AHL <= DI;
-        JSR0: AHL <= DI;
-        RTS1: AHL <= DI;
     endcase
 
 /* 
@@ -306,7 +301,7 @@ always @(posedge clk)
  */
 always @(posedge clk)
     if( state != DATA )
-        AB <= AD;
+        ADR <= AD;
 
 always @(posedge clk)
     if( RST )
@@ -322,6 +317,7 @@ always @(posedge clk)
         RTS2: PC <= AD + 1;
         JMP1: PC <= AD + 1;
         IND1: PC <= AD + 1;
+        BRK2: PC <= 16'hfffe;
         BRK3: PC <= AD + 1;
     endcase
 
@@ -374,7 +370,7 @@ always @(posedge clk)
     case( state )
         RTS0: if( rti )                 N <= DI[7];
         SYNC: if( plp )                 N <= DI[7];
-              else if( bit_isn )        N <= M[7];
+              else if( bit_isn )        N <= DR[7];
               else if( ld )             N <= alu_N;
               else if( cmp )            N <= alu_N;
               else if( bit_isn )        N <= alu_N;
@@ -390,7 +386,7 @@ always @(posedge clk)
         RTS0: if( rti )                 V <= DI[6];
         SYNC: if( plp )                 V <= DI[6];
               else if( clv )            V <= 0;
-              else if( bit_isn )        V <= M[6];
+              else if( bit_isn )        V <= DR[6];
               else if( adc_sbc )        V <= alu_V;
     endcase
 
@@ -953,6 +949,7 @@ always @*
         BRK2: statename = "BRK2";
         BRK3: statename = "BRK3";
         RTI0: statename = "RTI0";
+        RST0: statename = "RST0";
     default : statename = "?";
     endcase
 
@@ -1073,8 +1070,8 @@ wire [7:0] A = regs[SEL_A];
 
 always @( posedge clk ) begin
     if( !debug || cycle < 1000 || cycle[10:0] == 0 )
-      $display( "%4d %s %s %s PC:%h AD:%h DI:%h HOLD:%h DO:%h AHL:%h IR:%h WE:%d ALU:%h S:%02x A:%h X:%h Y:%h R:%h M:%h LD:%h P:%s%s1%s%s%s%s%s %d", 
-                 cycle, R_, opcode, statename, PC, AD, DI, DIHOLD, DO, AHL, IR, WE, alu_out, S, A, X, Y, R, M, ld, N_, V_, B_, D_, I_, Z_, C_, alu_C );
+      $display( "%4d %s %s %s PC:%h AD:%h DI:%h HOLD:%h DO:%h DR:%h IR:%h WE:%d ALU:%h S:%02x A:%h X:%h Y:%h R:%h LD:%h P:%s%s1%s%s%s%s%s %d", 
+                 cycle, R_, opcode, statename, PC, AD, DI, DIHOLD, DO, DR, IR, WE, alu_out, S, A, X, Y, R, ld, N_, V_, B_, D_, I_, Z_, C_, alu_C );
       if( instruction == 8'hdb )
         $finish( );
 end
