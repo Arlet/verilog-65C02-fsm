@@ -8,7 +8,7 @@
 module cpu( 
     input clk,                          // CPU clock
     input RST,                          // RST signal
-    output reg [15:0] AD,               // address bus (combinatorial) 
+    output [15:0] AD,                   // address bus (combinatorial) 
     output sync,                        // start of new instruction
     input [7:0] DI,                     // data bus input
     output reg [7:0] DO,                // data bus output 
@@ -19,10 +19,12 @@ module cpu(
     input debug );                      // debug for simulation
 
 reg [15:0] PC = 16'hf800;               // program counter high
-wire [7:0] ADH = AD[15:8];
-wire [7:0] ADL = AD[7:0];
 wire [7:0] PCH = PC[15:8];
 wire [7:0] PCL = PC[7:0];
+
+reg [8:0] ADL;                          // ADL[8] is carry for ADH 
+reg [7:0] ADH;
+assign AD = { ADH, ADL[7:0] };
 
 reg [15:0] ADR;                         // registered address
 reg [7:0] DR;                           // data register, registered DI 
@@ -261,39 +263,74 @@ always @(posedge clk)
 
 always @*
     case( state )
-           BRK0: AD = {8'h01, S};
-           BRK1: AD = {8'h01, S};
-           BRK2: AD = {8'h01, S};
-           BRK3: AD = PC;
-           JSR0: AD = {8'h01, S};
-           JSR1: AD = {8'h01, S};
-           JSR2: AD = PC;
-           JSR3: AD = {DI, DR};
-           ZERO: AD = {8'h00, DI + XY};
-           IDX0: AD = {8'h00, DI + XY};             // XY = X or Z
-           IDX1: AD = ADR + 1;                       // XY = X or Z
-           IDX2: AD = {DI, DR} + XY;               // XY = Y or Z
-           DATA: AD = PC;
-           ABS0: AD = PC;
-           ABS1: AD = {DI, DR} + XY;
-           JMP0: AD = PC;
-           JMP1: AD = {DI, DR};
-           IMMI: AD = PC;
-           SYNC: AD = PC; 
-           RDWR: AD = ADR;
-           PHA0: AD = {8'h01, S};
-           PLA0: AD = {8'h01, S + 8'h01};
-           RTI0: AD = {8'h01, S + 8'h01};
-           RTS0: AD = {8'h01, S + 8'h01};
-           RTS1: AD = {8'h01, S + 8'h01};
-           RTS2: AD = {DI, DR} + !rti;
-           BRA0: if( !cond )      AD = PC;
-                 else if( DI[7] ) AD = PC + {8'hff, DI};
-                 else             AD = PC + {8'h00, DI};
-           IND0: AD = PC;
-           IND1: AD = {DI, DR};
-           RST0: AD = PC;
-        default: AD = 16'habcd;
+           BRK0: ADL = S;
+           BRK1: ADL = S;
+           BRK2: ADL = S;
+           BRK3: ADL = PCL;
+           JSR0: ADL = S;
+           JSR1: ADL = S;
+           JSR2: ADL = PCL;
+           JSR3: ADL = DR;
+           ZERO: ADL = DI + XY;
+           IDX0: ADL = DI + XY;
+           IDX1: ADL = ADR + 1;
+           IDX2: ADL = DR + XY;
+           DATA: ADL = PCL;
+           ABS0: ADL = PCL;
+           ABS1: ADL = DR + XY;
+           JMP0: ADL = PCL;
+           JMP1: ADL = DR;
+           IMMI: ADL = PCL;
+           SYNC: ADL = PCL; 
+           RDWR: ADL = ADR;
+           PHA0: ADL = S;
+           PLA0: ADL = S+1;
+           RTI0: ADL = S+1;
+           RTS0: ADL = S+1;
+           RTS1: ADL = S+1;
+           RTS2: ADL = DR + !rti;
+           BRA0: if( !cond )      ADL = PCL;
+                 else if( DI[7] ) ADL = PCL + DI;
+                 else             ADL = PCL + DI;
+           IND0: ADL = PCL;
+           IND1: ADL = DR;
+           RST0: ADL = PCL;
+    endcase
+
+always @*
+    case( state )
+           BRK0: ADH = 8'h01;
+           BRK1: ADH = 8'h01;
+           BRK2: ADH = 8'h01;
+           BRK3: ADH = PCH;
+           JSR0: ADH = 8'h01;
+           JSR1: ADH = 8'h01;
+           JSR2: ADH = PCH;
+           JSR3: ADH = DI;
+           ZERO: ADH = 8'h00;
+           IDX0: ADH = 8'h00;
+           IDX1: ADH = ADR[15:8] + ADL[8]; 
+           IDX2: ADH = DI + ADL[8];
+           DATA: ADH = PCH;
+           ABS0: ADH = PCH;
+           ABS1: ADH = DI + ADL[8];
+           JMP0: ADH = PCH;
+           JMP1: ADH = DI;
+           IMMI: ADH = PCH;
+           SYNC: ADH = PCH; 
+           RDWR: ADH = ADR[15:8];
+           PHA0: ADH = 8'h01;
+           PLA0: ADH = 8'h01;
+           RTI0: ADH = 8'h01;
+           RTS0: ADH = 8'h01;
+           RTS1: ADH = 8'h01;
+           RTS2: ADH = DI + ADL[8];
+           BRA0: if( !cond )      ADH = PCH;
+                 else if( DI[7] ) ADH = PCH + 8'hff + ADL[8];
+                 else             ADH = PCH + 8'h00 + ADL[8];
+           IND0: ADH = PCH;
+           IND1: ADH = DI;
+           RST0: ADH = PCH;
     endcase
 
 /* 
@@ -302,6 +339,7 @@ always @*
 always @(posedge clk)
     if( state != DATA )
         ADR <= AD;
+
 
 always @(posedge clk)
     if( RST )
