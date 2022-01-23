@@ -147,9 +147,9 @@ reg [7:0] M;
 
 always @(posedge clk)
     case( state )
-        IMMI: M <= DB;
-        PLA0: M <= DB;
-        DATA: M <= DB;
+        IMMI: M <= DI;
+        PLA0: M <= DI;
+        DATA: M <= DI;
     endcase
 
 /*
@@ -209,15 +209,15 @@ always @* begin
     {alu_C, alu_out} = alu_ai + alu_bi + alu_ci;
 
     /* 
-     * shift/rotate the result if necessary. Note that there's 
-     * a trick to replace alu_out with DB input when shift=0, 
-     * but right=1. This allows ALU bypass for PLA/PLX/PLY.
-     */
-
-    /* 
      * determine shift input for rotate instructions
      */
     alu_si = C & alu_op[0];
+
+    /* 
+     * shift/rotate the result if necessary. Note that there's 
+     * a trick to replace alu_out with DI input when shift=0, 
+     * but right=1. This allows ALU bypass for PLA/PLX/PLY.
+     */
 
     if( shift )
         if( right )
@@ -225,13 +225,8 @@ always @* begin
         else
             {alu_C, alu_out} = {alu_out, alu_si};
     else if( right )
-        alu_out = DB;
+        alu_out = DI;
 end
-
-/*
- * databus
- */
-wire [7:0] DB = DI;                     // data bus (alias for DB)
 
 /*
  * stack pointer gets its own register
@@ -267,16 +262,16 @@ always @*
            JSR0: AD = {8'h01, S};
            JSR1: AD = {8'h01, S};
            JSR2: AD = PC;
-           JSR3: AD = {DB, AHL};
-           ZERO: AD = {8'h00, DB + XY};
-           IDX0: AD = {8'h00, DB + XY};             // XY = X or Z
+           JSR3: AD = {DI, AHL};
+           ZERO: AD = {8'h00, DI + XY};
+           IDX0: AD = {8'h00, DI + XY};             // XY = X or Z
            IDX1: AD = AB + 1;                       // XY = X or Z
-           IDX2: AD = {DB, AHL} + XY;               // XY = Y or Z
+           IDX2: AD = {DI, AHL} + XY;               // XY = Y or Z
            DATA: AD = PC;
            ABS0: AD = PC;
-           ABS1: AD = {DB, AHL} + XY;
+           ABS1: AD = {DI, AHL} + XY;
            JMP0: AD = PC;
-           JMP1: AD = {DB, AHL};
+           JMP1: AD = {DI, AHL};
            IMMI: AD = PC;
            SYNC: AD = PC; 
            RDWR: AD = AB;
@@ -285,25 +280,25 @@ always @*
            RTI0: AD = {8'h01, S + 8'h01};
            RTS0: AD = {8'h01, S + 8'h01};
            RTS1: AD = {8'h01, S + 8'h01};
-           RTS2: AD = {DB, AHL} + !rti;
+           RTS2: AD = {DI, AHL} + !rti;
            BRA0: if( !cond )      AD = PC;
-                 else if( DB[7] ) AD = PC + {8'hff, DB};
-                 else             AD = PC + {8'h00, DB};
+                 else if( DI[7] ) AD = PC + {8'hff, DI};
+                 else             AD = PC + {8'h00, DI};
            IND0: AD = PC;
-           IND1: AD = {DB, AHL};
+           IND1: AD = {DI, AHL};
            RST0: AD = PC;
         default: AD = 16'habcd;
     endcase
 
 always @(posedge clk)
     case( state )
-        ABS0: AHL <= DB;
-        IDX0: AHL <= DB;
-        IDX1: AHL <= DB;
-        JMP0: AHL <= DB;
-        IND0: AHL <= DB;
-        JSR0: AHL <= DB;
-        RTS1: AHL <= DB;
+        ABS0: AHL <= DI;
+        IDX0: AHL <= DI;
+        IDX1: AHL <= DI;
+        JMP0: AHL <= DI;
+        IND0: AHL <= DI;
+        JSR0: AHL <= DI;
+        RTS1: AHL <= DI;
     endcase
 
 /* 
@@ -377,8 +372,8 @@ always @*
  */
 always @(posedge clk)
     case( state )
-        RTS0: if( rti )                 N <= DB[7];
-        SYNC: if( plp )                 N <= DB[7];
+        RTS0: if( rti )                 N <= DI[7];
+        SYNC: if( plp )                 N <= DI[7];
               else if( bit_isn )        N <= M[7];
               else if( ld )             N <= alu_N;
               else if( cmp )            N <= alu_N;
@@ -392,8 +387,8 @@ always @(posedge clk)
  */
 always @(posedge clk)
     case( state )
-        RTS0: if( rti )                 V <= DB[6];
-        SYNC: if( plp )                 V <= DB[6];
+        RTS0: if( rti )                 V <= DI[6];
+        SYNC: if( plp )                 V <= DI[6];
               else if( clv )            V <= 0;
               else if( bit_isn )        V <= M[6];
               else if( adc_sbc )        V <= alu_V;
@@ -404,8 +399,8 @@ always @(posedge clk)
  */
 always @(posedge clk)
     case( state )
-        RTS0: if( rti )                 D <= DB[3];
-        SYNC: if( plp )                 D <= DB[3];
+        RTS0: if( rti )                 D <= DI[3];
+        SYNC: if( plp )                 D <= DI[3];
               else if( cld_sed )        D <= set;
     endcase
 
@@ -415,8 +410,8 @@ always @(posedge clk)
 always @(posedge clk)
     case( state )
         BRK3:                           I <= 1;
-        RTS0: if( rti )                 I <= DB[2];
-        SYNC: if( plp )                 I <= DB[2]; 
+        RTS0: if( rti )                 I <= DI[2];
+        SYNC: if( plp )                 I <= DI[2]; 
               else if( cli_sei )        I <= set;
     endcase
 
@@ -425,8 +420,8 @@ always @(posedge clk)
  */
 always @(posedge clk)
     case( state )
-        RTS0: if( rti )                 Z <= DB[1];
-        SYNC: if( plp )                 Z <= DB[1]; 
+        RTS0: if( rti )                 Z <= DI[1];
+        SYNC: if( plp )                 Z <= DI[1]; 
               else if( ld )             Z <= alu_Z;
               else if( cmp )            Z <= alu_Z;
               else if( bit_isn )        Z <= alu_Z;
@@ -438,8 +433,8 @@ always @(posedge clk)
  */
 always @(posedge clk)
     case( state )
-        RTS0: if( rti )                 C <= DB[0];
-        SYNC: if( plp )                 C <= DB[0];
+        RTS0: if( rti )                 C <= DI[0];
+        SYNC: if( plp )                 C <= DI[0];
               else if( clc_sec )        C <= set;
               else if( cmp )            C <= alu_C;
               else if( shift & ~rmw )   C <= alu_C;
@@ -451,17 +446,17 @@ always @(posedge clk)
  * state machine
  */
 
-reg [8:0] DBHOLD = {9'h1ea};
+reg [8:0] DIHOLD = {9'h1ea};
 
 always @(posedge clk)
     case( state )
-        PLA0: DBHOLD <= {1'b1, DB};
-        PHA0: DBHOLD <= {1'b1, DB};
-        RDWR: DBHOLD <= {1'b1, DB};
-    default:  DBHOLD <= {1'b0, DB};
+        PLA0: DIHOLD <= {1'b1, DI};
+        PHA0: DIHOLD <= {1'b1, DI};
+        RDWR: DIHOLD <= {1'b1, DI};
+    default:  DIHOLD <= {1'b0, DI};
     endcase
 
-assign IR = DBHOLD[8] ? DBHOLD[7:0] : DB;
+assign IR = DIHOLD[8] ? DIHOLD[7:0] : DI;
 
 /*
  * flag set bit to distinguish CLC/SEC and friends
@@ -1078,8 +1073,8 @@ wire [7:0] A = regs[SEL_A];
 
 always @( posedge clk ) begin
     if( !debug || cycle < 1000 || cycle[10:0] == 0 )
-      $display( "%4d %s %s %s PC:%h AD:%h DB:%h HOLD:%h DO:%h AHL:%h IR:%h WE:%d ALU:%h S:%02x A:%h X:%h Y:%h R:%h M:%h LD:%h P:%s%s1%s%s%s%s%s %d", 
-                 cycle, R_, opcode, statename, PC, AD, DB, DBHOLD, DO, AHL, IR, WE, alu_out, S, A, X, Y, R, M, ld, N_, V_, B_, D_, I_, Z_, C_, alu_C );
+      $display( "%4d %s %s %s PC:%h AD:%h DI:%h HOLD:%h DO:%h AHL:%h IR:%h WE:%d ALU:%h S:%02x A:%h X:%h Y:%h R:%h M:%h LD:%h P:%s%s1%s%s%s%s%s %d", 
+                 cycle, R_, opcode, statename, PC, AD, DI, DIHOLD, DO, AHL, IR, WE, alu_out, S, A, X, Y, R, M, ld, N_, V_, B_, D_, I_, Z_, C_, alu_C );
       if( instruction == 8'hdb )
         $finish( );
 end
