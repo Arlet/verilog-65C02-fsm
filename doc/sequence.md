@@ -23,6 +23,10 @@ for instance in absolute addressing modes.
 
 * Whenever a cell in the table is empty, then its value is not relevant. 
 
+All instruction decoding happens in the SYNC state. Instruction execution
+starts in the next cycle. Writing results in registers, such as loading
+the memory value in A during the LDA instructions always happens in the
+SYNC cycle of the next instruction.
 
 LDA IMM
 -------
@@ -95,6 +99,28 @@ The ORA, EOR, AND, ADC, SBC, and CMP instructions follow the same patterns, but 
 The STA instructions follow the same patterns, but perform a memory write when the effective
 address is on the bus in the ZPG0, ABS1, or IDX2 states. 
 
+PHA
+---
+example PHA, sequence 48, S=FF, A=55
+
+| state | AB   |  PC  | DB | DR | Comment        |
+|:-----:|:----:|:----:|:--:|:--:|----------------|
+|       | F800 |      |    |    |                |
+| SYNC  | F801 | F801 | 48 |    |                |
+| PHA0  | 01FF | F802 | 55 |    | write A to {1,S}|
+| SYNC  | F802 | F802 |    |    | AB = PC        |
+
+PLA
+---
+example PLA, sequence 48, S=FE
+
+| state | AB   |  PC  | DB | DR | Comment        |
+|:-----:|:----:|:----:|:--:|:--:|----------------|
+|       | F800 |      |    |    |                |
+| SYNC  | F801 | F801 | 48 |    |                |
+| PHA0  | 01FF | F802 | 55 |    |                | 
+| SYNC  | F802 | F802 |    | 55 | write 55 to A  |
+
 INC ZP
 ------
 example: INC $12, sequence E6 12. The location $12
@@ -139,5 +165,16 @@ operation, and different register file controls.
 | SYNC  | F802 | F802 |    |    |                  |
 
 
+BRA
+---
+example BCS followed by BCC with C=0, sequence B0 FE 90 FC
+
+| state | AB   |  PC  | DB | DR | Comment             |
+|:-----:|:----:|:----:|:--:|:--:|---------------------|
+|       | F800 |      |    |    |                     |
+| SYNC  | F801 | F801 | B0 |    |                     | 
+| BRA0  | F802 | F802 | FE |    | AB = PC             | 
+| SYNC  | F803 | F803 | 90 |    |                     |
+| BRA0  | F800 | F804 | FC |    | AB = PC+{FF,DB}     |
 
 
