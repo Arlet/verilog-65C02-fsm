@@ -1,9 +1,27 @@
 Instruction sequences
 =====================
 
-These are all important instruction sequences used in the model. In these examples, 
-the code is located at F800 and further. Some examples use the 'Z' register. This 
-is a register that contains the constant value 0.
+These are all important instruction sequences used in the model. In these
+examples, the code is located at F800 and further. Some examples use the
+'Z' register. This is a register that contains the constant value 0.
+
+* The value 'AB' is the combinatorial output of the address bus.
+
+* The 'PC' value is 16 bit register that holds the current program
+counter in most cycles, but can be temporarily wrong in some cases.
+
+* The 'DB' value represents the data bus, and can be either input or
+output. When reading from the data bus, the DB value corresponds to
+the AB value from the line above, because the memory is synchronous and
+takes 1 clock cycle to produce the data. When writing, the AB/DB values
+on the same row are used together.
+
+* The 'DR' is a data register that can hold a copy of a value seen on the
+data bus. This value may be used subsequently in the ALU, for instance
+in the LDA instruction, or sometimes it can hold part of the address,
+for instance in absolute addressing modes.
+
+* Whenever a cell in the table is empty, then its value is not relevant. 
 
 
 LDA IMM
