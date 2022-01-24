@@ -14,7 +14,8 @@ counter in most cycles, but can be temporarily wrong in some cases.
 output. When reading from the data bus, the DB value corresponds to
 the AB value from the line above, because the memory is synchronous and
 takes 1 clock cycle to produce the data. When writing, the AB/DB values
-on the same row are used together.
+on the same row are used together. If a read cycle is immediately followed
+by a write cycle, the read data and write data are valid at the same time.
 
 * The 'DR' is a data register that can hold a copy of a value seen on the
 data bus. This value may be used subsequently in the ALU, for instance
@@ -88,8 +89,8 @@ The location $1234 contains $55
 | IDX0  | 0014 | F802 | 14 |    | AB = DB+Z      |
 | IDX1  | 0015 | F802 | 32 |    | AB = ABR+1     |
 | IDX2  | 1234 | F802 | 12 | 32 | AB = {DR,DB}+Y |
-| DATA  | F802 | F803 | 55 |    |                |
-| SYNC  | F803 | F804 |    | 55 | store DR in A  | 
+| DATA  | F802 | F802 | 55 |    | AB = PC        | 
+| SYNC  | F803 | F803 |    | 55 | store DR in A  | 
 
 The LDA (ZP) follows the same sequence, but adds Z register instead of Y in IDX2 state.
 The LDA (ZP,X) also follows same sequence, but adds X register instead of Z in IDX0 state
@@ -176,5 +177,36 @@ example BCS followed by BCC with C=0, sequence B0 FE 90 FC
 | BRA0  | F802 | F802 | FE |    | AB = PC             | 
 | SYNC  | F803 | F803 | 90 |    |                     |
 | BRA0  | F800 | F804 | FC |    | AB = PC+{FF,DB}     |
+
+JMP
+---
+example JMP to $1234, sequence 4C 34 12
+
+| state | AB   |  PC  | DB | DR | Comment          |
+|:-----:|:----:|:----:|:--:|:--:|------------------|
+|       | F800 |      |    |    |                  |
+| SYNC  | F801 | F801 | 4C |    |                  |
+| JMP0  | F802 | F802 | 34 |    |                  |
+| JMP1  | 1234 | F803 | 12 | 34 | AB = {DB,DR}     |
+| SYNC  | 1235 | 1235 |    |    |                  |
+
+JSR
+---
+
+example JSR to $1234, sequence 20 34 12
+
+| state | AB   |  PC  | DB | DR | Comment          |
+|:-----:|:----:|:----:|:--:|:--:|------------------|
+|       | F800 |      |    |    |                  |
+| SYNC  | F801 | F801 | 20 |    |                  |
+| JSR0  | 01FF | F802 | F8 |    | write PCH to {1,S} |
+| JSR1  | 01FE | F802 |    | 34 | write PCL to {1,S} |
+| JSR2  | F802 | F802 |    | 34 |                  |
+| JSR3  | 1234 | F802 | 12 | 34 | AB = {DB,DR}     |
+| SYNC  | 1235 | 1235 |    |    |                  |
+
+Note that the first operand byte (34) is read in the SYNC state, but
+only becomes available on the DI bus the next cycle, when the PCH value
+is written to the stack.
 
 
