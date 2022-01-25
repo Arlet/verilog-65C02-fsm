@@ -43,7 +43,7 @@ parameter
     IMMI  = 5'd1,
     PHA0  = 5'd2,
     PLA0  = 5'd3,
-    ZERO  = 5'd4,
+    ZPG0  = 5'd4,
     DATA  = 5'd5,
     ABS0  = 5'd6,
     ABS1  = 5'd7,
@@ -51,25 +51,26 @@ parameter
     JSR0  = 5'd9,
     JSR1  = 5'd10,
     JSR2  = 5'd11,
-    JSR3  = 5'd12,
-    RTS0  = 5'd13,
-    RTS1  = 5'd14,
-    RTS2  = 5'd15,
-    JMP0  = 5'd16,
-    JMP1  = 5'd17,
-    IDX0  = 5'd18,
-    IDX1  = 5'd19,
-    IDX2  = 5'd20,
-    RDWR  = 5'd21,
-    BRK0  = 5'd22,
-    BRK1  = 5'd23,
-    BRK2  = 5'd24,
-    BRK3  = 5'd25,
-    RTI0  = 5'd26,
-    IND0  = 5'd27,
-    IND1  = 5'd28,
-    RST0  = 5'd29,
-    XXXX  = 5'dx;
+    RTS0  = 5'd12,
+    RTS1  = 5'd13,
+    RTS2  = 5'd14,
+    JMP0  = 5'd15,
+    JMP1  = 5'd16,
+    IDX0  = 5'd17,
+    IDX1  = 5'd18,
+    IDX2  = 5'd19,
+    BRK0  = 5'd20,
+    BRK1  = 5'd21,
+    BRK2  = 5'd22,
+    BRK3  = 5'd23,
+    RTI0  = 5'd24,
+    IND0  = 5'd25,
+    IND1  = 5'd26,
+    ZPW0  = 5'd27,
+    ABW0  = 5'd28,
+    ABW1  = 5'd29,
+    RMW0  = 5'd30,
+    RMW1  = 5'd31;
 
 /*
  * control bits
@@ -151,7 +152,9 @@ always @(posedge clk)
         IMMI: DR <= DI;
         PLA0: DR <= DI;
         DATA: DR <= DI;
+        RMW0: DR <= DI;
         ABS0: DR <= DI;
+        ABW0: DR <= DI;
         IDX0: DR <= DI;
         IDX1: DR <= DI;
         JMP0: DR <= DI;
@@ -270,19 +273,22 @@ always @*
            JSR0: ADL = S;
            JSR1: ADL = S;
            JSR2: ADL = PCL;
-           JSR3: ADL = DR;
-           ZERO: ADL = DI + XY;
+           ZPG0: ADL = DI + XY;
+           ZPW0: ADL = DI + XY;
            IDX0: ADL = DI + XY;
            IDX1: ADL = ADR + 1;
            IDX2: ADL = DR + XY;
            DATA: ADL = PCL;
            ABS0: ADL = PCL;
            ABS1: ADL = DR + XY;
+           ABW0: ADL = PCL;
+           ABW1: ADL = DR + XY;
            JMP0: ADL = PCL;
            JMP1: ADL = DR;
            IMMI: ADL = PCL;
            SYNC: ADL = PCL; 
-           RDWR: ADL = ADR;
+           RMW0: ADL = PCL;
+           RMW1: ADL = ADR;
            PHA0: ADL = S;
            PLA0: ADL = S+1;
            RTI0: ADL = S+1;
@@ -294,7 +300,6 @@ always @*
                  else             ADL = PCL + DI;
            IND0: ADL = PCL;
            IND1: ADL = DR;
-           RST0: ADL = PCL;
     endcase
 
 always @*
@@ -306,19 +311,22 @@ always @*
            JSR0: ADH = 8'h01;
            JSR1: ADH = 8'h01;
            JSR2: ADH = PCH;
-           JSR3: ADH = DI;
-           ZERO: ADH = 8'h00;
+           ZPG0: ADH = 8'h00;
+           ZPW0: ADH = 8'h00;
            IDX0: ADH = 8'h00;
            IDX1: ADH = ADR[15:8] + ADL[8]; 
            IDX2: ADH = DI + ADL[8];
            DATA: ADH = PCH;
            ABS0: ADH = PCH;
            ABS1: ADH = DI + ADL[8];
+           ABW0: ADH = PCH;
+           ABW1: ADH = DI + ADL[8];
            JMP0: ADH = PCH;
            JMP1: ADH = DI;
            IMMI: ADH = PCH;
            SYNC: ADH = PCH; 
-           RDWR: ADH = ADR[15:8];
+           RMW0: ADH = PCH;
+           RMW1: ADH = ADR[15:8];
            PHA0: ADH = 8'h01;
            PLA0: ADH = 8'h01;
            RTI0: ADH = 8'h01;
@@ -330,14 +338,13 @@ always @*
                  else             ADH = PCH + 8'h00 + ADL[8];
            IND0: ADH = PCH;
            IND1: ADH = DI;
-           RST0: ADH = PCH;
     endcase
 
 /* 
  * make copy of current address for read-modify-write
  */
 always @(posedge clk)
-    if( state != DATA )
+    if( state != RMW0 )
         ADR <= AD;
 
 
@@ -345,13 +352,13 @@ always @(posedge clk)
     if( RST )
         PC <= 16'hfffc;
     else case( state )
-        RST0: PC <= AD + 1;
         SYNC: PC <= AD + 1;
         DATA: PC <= AD + 1;
+        RMW0: PC <= AD + 1;
         IMMI: PC <= AD + 1;
         ABS0: PC <= AD + 1;
+        ABW0: PC <= AD + 1;
         BRA0: PC <= AD + 1;
-        JSR3: PC <= AD + 1;
         RTS2: PC <= AD + 1;
         JMP1: PC <= AD + 1;
         IND1: PC <= AD + 1;
@@ -365,10 +372,10 @@ always @(posedge clk)
 
 always @*
     case( state )
-       ZERO: WE = sta;
+       ZPG0: WE = sta;
        ABS1: WE = sta;
        IDX2: WE = sta;
-       RDWR: WE = 1;
+       RMW1: WE = 1;
        JSR0: WE = 1;
        JSR1: WE = 1;
        BRK0: WE = 1;
@@ -384,9 +391,9 @@ always @*
 always @*
     case( state )
        PHA0: DO = php ? P : alu_out;
-       ZERO: DO = alu_out;
+       ZPG0: DO = alu_out;
        ABS1: DO = alu_out;
-       RDWR: DO = alu_out;
+       RMW1: DO = alu_out;
        IDX2: DO = alu_out;
        JSR0: DO = PCH;
        JSR1: DO = PCL;
@@ -412,7 +419,7 @@ always @(posedge clk)
               else if( ld )             N <= alu_N;
               else if( cmp )            N <= alu_N;
               else if( bit_isn )        N <= alu_N;
-        RDWR:                           N <= alu_N;
+        RMW1:                           N <= alu_N;
     endcase
 
 
@@ -459,7 +466,7 @@ always @(posedge clk)
               else if( ld )             Z <= alu_Z;
               else if( cmp )            Z <= alu_Z;
               else if( bit_isn )        Z <= alu_Z;
-        RDWR:                           Z <= alu_Z;
+        RMW1:                           Z <= alu_Z;
     endcase
 
 /*
@@ -473,7 +480,7 @@ always @(posedge clk)
               else if( cmp )            C <= alu_C;
               else if( shift & ~rmw )   C <= alu_C;
               else if( adc_sbc )        C <= alu_C;
-        RDWR: if( shift )               C <= alu_C;
+        RMW1: if( shift )               C <= alu_C;
     endcase
 
 /*
@@ -486,7 +493,7 @@ always @(posedge clk)
     case( state )
         PLA0: DIHOLD <= {1'b1, DI};
         PHA0: DIHOLD <= {1'b1, DI};
-        RDWR: DIHOLD <= {1'b1, DI};
+        RMW1: DIHOLD <= {1'b1, DI};
     default:  DIHOLD <= {1'b0, DI};
     endcase
 
@@ -519,103 +526,103 @@ always @*
 
 always @(posedge clk)
     if( RST )
-        state <= RST0;
+        state <= BRK3;
     else case( state )
         SYNC: case( IR )
                   8'h00: state <= BRK0; // BRK
                   8'h01: state <= IDX0; // ORA (ZP,X)
-                  8'h04: state <= ZERO; // TSB ZP
-                  8'h05: state <= ZERO; // ORA ZP
-                  8'h06: state <= ZERO; // ASL ZP
+                  8'h04: state <= ZPG0; // TSB ZP
+                  8'h05: state <= ZPG0; // ORA ZP
+                  8'h06: state <= ZPW0; // ASL ZP
                   8'h08: state <= PHA0; // PHP
                   8'h09: state <= IMMI; // ORA #IMM
                   8'h0A: state <= SYNC; // ASL A
                   8'h0C: state <= ABS0; // TSB ABS
                   8'h0D: state <= ABS0; // ORA ABS
-                  8'h0E: state <= ABS0; // ASL ABS
+                  8'h0E: state <= ABW0; // ASL ABS
                   8'h10: state <= BRA0; // BPL
                   8'h11: state <= IDX0; // ORA (ZP),Y
                   8'h12: state <= IDX0; // ORA (ZP)
-                  8'h14: state <= ZERO; // TRB ZP
-                  8'h15: state <= ZERO; // ORA ZP,X
-                  8'h16: state <= ZERO; // ASL ZP,X
+                  8'h14: state <= ZPG0; // TRB ZP
+                  8'h15: state <= ZPG0; // ORA ZP,X
+                  8'h16: state <= ZPW0; // ASL ZP,X
                   8'h18: state <= SYNC; // CLC
                   8'h19: state <= ABS0; // ORA ABS,Y
                   8'h1A: state <= SYNC; // INC A
                   8'h1C: state <= ABS0; // TRB ABS
                   8'h1D: state <= ABS0; // ORA ABS,X
-                  8'h1E: state <= ABS0; // ASL ABS,X
+                  8'h1E: state <= ABW0; // ASL ABS,X
                   8'h20: state <= JSR0; // JSR
                   8'h21: state <= IDX0; // AND (ZP,X)
-                  8'h24: state <= ZERO; // BIT ZP
-                  8'h25: state <= ZERO; // AND ZP
-                  8'h26: state <= ZERO; // ROL ZP
+                  8'h24: state <= ZPG0; // BIT ZP
+                  8'h25: state <= ZPG0; // AND ZP
+                  8'h26: state <= ZPW0; // ROL ZP
                   8'h28: state <= PLA0; // PLP
                   8'h29: state <= IMMI; // AND #IMM
                   8'h2A: state <= SYNC; // ROL A
                   8'h2C: state <= ABS0; // BIT ABS
                   8'h2D: state <= ABS0; // AND ABS
-                  8'h2E: state <= ABS0; // ROL ABS
+                  8'h2E: state <= ABW0; // ROL ABS
                   8'h30: state <= BRA0; // BMI
                   8'h31: state <= IDX0; // AND (ZP),Y
                   8'h32: state <= IDX0; // AND (ZP)
-                  8'h34: state <= ZERO; // BIT ZP,X
-                  8'h35: state <= ZERO; // AND ZP,X
-                  8'h36: state <= ZERO; // ROL ZP,X
+                  8'h34: state <= ZPG0; // BIT ZP,X
+                  8'h35: state <= ZPG0; // AND ZP,X
+                  8'h36: state <= ZPW0; // ROL ZP,X
                   8'h38: state <= SYNC; // SEC
                   8'h39: state <= ABS0; // AND ABS,Y
                   8'h3A: state <= SYNC; // DEC A
                   8'h3C: state <= ABS0; // BIT ABS,X
                   8'h3D: state <= ABS0; // AND ABS,X
-                  8'h3E: state <= ABS0; // ROL ABS,X
+                  8'h3E: state <= ABW0; // ROL ABS,X
                   8'h40: state <= RTI0; // RTI
                   8'h41: state <= IDX0; // EOR (ZP,X)
-                  8'h45: state <= ZERO; // EOR ZP
-                  8'h46: state <= ZERO; // LSR ZP
+                  8'h45: state <= ZPG0; // EOR ZP
+                  8'h46: state <= ZPW0; // LSR ZP
                   8'h48: state <= PHA0; // PHA
                   8'h49: state <= IMMI; // EOR #IMM
                   8'h4A: state <= SYNC; // LSR A
                   8'h4C: state <= JMP0; // JMP
                   8'h4D: state <= ABS0; // EOR ABS
-                  8'h4E: state <= ABS0; // LSR ABS
+                  8'h4E: state <= ABW0; // LSR ABS
                   8'h50: state <= BRA0; // BVC
                   8'h51: state <= IDX0; // EOR (ZP),Y
                   8'h52: state <= IDX0; // EOR (ZP)
-                  8'h55: state <= ZERO; // EOR ZP,X
-                  8'h56: state <= ZERO; // LSR ZP,X
+                  8'h55: state <= ZPG0; // EOR ZP,X
+                  8'h56: state <= ZPW0; // LSR ZP,X
                   8'h58: state <= SYNC; // CLI
                   8'h59: state <= ABS0; // EOR ABS,Y
                   8'h5A: state <= PHA0; // PHY
                   8'h5D: state <= ABS0; // EOR ABS,X
-                  8'h5E: state <= ABS0; // LSR ABS,X
+                  8'h5E: state <= ABW0; // LSR ABS,X
                   8'h60: state <= RTS0; // RTS
                   8'h61: state <= IDX0; // ADC (ZP,X)
-                  8'h64: state <= ZERO; // STZ ZP
-                  8'h65: state <= ZERO; // ADC ZP
-                  8'h66: state <= ZERO; // ROR ZP
+                  8'h64: state <= ZPG0; // STZ ZP
+                  8'h65: state <= ZPG0; // ADC ZP
+                  8'h66: state <= ZPW0; // ROR ZP
                   8'h68: state <= PLA0; // PLA
                   8'h69: state <= IMMI; // ADC #IMM
                   8'h6A: state <= SYNC; // ROR A
                   8'h6C: state <= IND0; // JMP (IDX)
                   8'h6D: state <= ABS0; // ADC ABS
-                  8'h6E: state <= ABS0; // ROR ABS
+                  8'h6E: state <= ABW0; // ROR ABS
                   8'h70: state <= BRA0; // BVS
                   8'h71: state <= IDX0; // ADC (ZP),Y
                   8'h72: state <= IDX0; // ADC (ZP)
-                  8'h74: state <= ZERO; // STZ ZP,X
-                  8'h75: state <= ZERO; // ADC ZP,X
-                  8'h76: state <= ZERO; // ROR ZP,X
+                  8'h74: state <= ZPG0; // STZ ZP,X
+                  8'h75: state <= ZPG0; // ADC ZP,X
+                  8'h76: state <= ZPW0; // ROR ZP,X
                   8'h78: state <= SYNC; // SEI
                   8'h79: state <= ABS0; // ADC ABS,Y
                   8'h7A: state <= PLA0; // PLY
                   8'h7C: state <= IND0; // JMP (IDX,X)
                   8'h7D: state <= ABS0; // ADC ABS,X
-                  8'h7E: state <= ABS0; // ROR ABS,X
+                  8'h7E: state <= ABW0; // ROR ABS,X
                   8'h80: state <= BRA0; // BRA
                   8'h81: state <= IDX0; // STA (ZP,X)
-                  8'h84: state <= ZERO; // STY ZP
-                  8'h85: state <= ZERO; // STA ZP
-                  8'h86: state <= ZERO; // STX ZP
+                  8'h84: state <= ZPG0; // STY ZP
+                  8'h85: state <= ZPG0; // STA ZP
+                  8'h86: state <= ZPG0; // STX ZP
                   8'h88: state <= SYNC; // DEY
                   8'h89: state <= IMMI; // BIT #IMM
                   8'h8A: state <= SYNC; // TXA
@@ -625,9 +632,9 @@ always @(posedge clk)
                   8'h90: state <= BRA0; // BCC
                   8'h91: state <= IDX0; // STA (ZP),Y
                   8'h92: state <= IDX0; // STA (ZP)
-                  8'h94: state <= ZERO; // STY ZP,X
-                  8'h95: state <= ZERO; // STA ZP,X
-                  8'h96: state <= ZERO; // STX ZP,Y
+                  8'h94: state <= ZPG0; // STY ZP,X
+                  8'h95: state <= ZPG0; // STA ZP,X
+                  8'h96: state <= ZPG0; // STX ZP,Y
                   8'h98: state <= SYNC; // TYA
                   8'h99: state <= ABS0; // STA ABS,Y
                   8'h9A: state <= SYNC; // TXS
@@ -637,9 +644,9 @@ always @(posedge clk)
                   8'hA0: state <= IMMI; // LDY #IMM
                   8'hA1: state <= IDX0; // LDA (ZP,X)
                   8'hA2: state <= IMMI; // LDX #IMM
-                  8'hA4: state <= ZERO; // LDY ZP
-                  8'hA5: state <= ZERO; // LDA ZP
-                  8'hA6: state <= ZERO; // LDX ZP
+                  8'hA4: state <= ZPG0; // LDY ZP
+                  8'hA5: state <= ZPG0; // LDA ZP
+                  8'hA6: state <= ZPG0; // LDX ZP
                   8'hA8: state <= SYNC; // TAY
                   8'hA9: state <= IMMI; // LDA #IMM
                   8'hAA: state <= SYNC; // TAX
@@ -649,9 +656,9 @@ always @(posedge clk)
                   8'hB0: state <= BRA0; // BCS
                   8'hB1: state <= IDX0; // LDA (ZP),Y
                   8'hB2: state <= IDX0; // LDA (ZP)
-                  8'hB4: state <= ZERO; // LDY ZP,X
-                  8'hB5: state <= ZERO; // LDA ZP,X
-                  8'hB6: state <= ZERO; // LDX ZP,Y
+                  8'hB4: state <= ZPG0; // LDY ZP,X
+                  8'hB5: state <= ZPG0; // LDA ZP,X
+                  8'hB6: state <= ZPG0; // LDX ZP,Y
                   8'hB8: state <= SYNC; // CLV
                   8'hB9: state <= ABS0; // LDA ABS,Y
                   8'hBA: state <= SYNC; // TSX
@@ -660,62 +667,64 @@ always @(posedge clk)
                   8'hBE: state <= ABS0; // LDX ABS,Y
                   8'hC0: state <= IMMI; // CPY #IMM
                   8'hC1: state <= IDX0; // CMP (ZP,X)
-                  8'hC4: state <= ZERO; // CPY ZP
-                  8'hC5: state <= ZERO; // CMP ZP
-                  8'hC6: state <= ZERO; // DEC ZP
+                  8'hC4: state <= ZPG0; // CPY ZP
+                  8'hC5: state <= ZPG0; // CMP ZP
+                  8'hC6: state <= ZPW0; // DEC ZP
                   8'hC8: state <= SYNC; // INY
                   8'hC9: state <= IMMI; // CMP #IMM
                   8'hCA: state <= SYNC; // DEX
                   8'hCC: state <= ABS0; // CPY ABS
                   8'hCD: state <= ABS0; // CMP ABS
-                  8'hCE: state <= ABS0; // DEC ABS
+                  8'hCE: state <= ABW0; // DEC ABS
                   8'hD0: state <= BRA0; // BNE
                   8'hD1: state <= IDX0; // CMP (ZP),Y
                   8'hD2: state <= IDX0; // CMP (ZP)
-                  8'hD5: state <= ZERO; // CMP ZP,X
-                  8'hD6: state <= ZERO; // DEC ZP,X
+                  8'hD5: state <= ZPG0; // CMP ZP,X
+                  8'hD6: state <= ZPW0; // DEC ZP,X
                   8'hD8: state <= SYNC; // CLD
                   8'hD9: state <= ABS0; // CMP ABS,Y
                   8'hDA: state <= PHA0; // PHX
                   8'hDD: state <= ABS0; // CMP ABS,X
-                  8'hDE: state <= ABS0; // DEC ABS,X
+                  8'hDE: state <= ABW0; // DEC ABS,X
                   8'hE0: state <= IMMI; // CPX #IMM
                   8'hE1: state <= IDX0; // SBC (ZP,X)
-                  8'hE4: state <= ZERO; // CPX ZP
-                  8'hE5: state <= ZERO; // SBC ZP
-                  8'hE6: state <= ZERO; // INC ZP
+                  8'hE4: state <= ZPG0; // CPX ZP
+                  8'hE5: state <= ZPG0; // SBC ZP
+                  8'hE6: state <= ZPW0; // INC ZP
                   8'hE8: state <= SYNC; // INX
                   8'hE9: state <= IMMI; // SBC #IMM
                   8'hEA: state <= SYNC; // NOP
                   8'hEC: state <= ABS0; // CPX ABS
                   8'hED: state <= ABS0; // SBC ABS
-                  8'hEE: state <= ABS0; // INC ABS
+                  8'hEE: state <= ABW0; // INC ABS
                   8'hF0: state <= BRA0; // BEQ
                   8'hF1: state <= IDX0; // SBC (ZP),Y
                   8'hF2: state <= IDX0; // SBC (ZP)
-                  8'hF5: state <= ZERO; // SBC ZP,X
-                  8'hF6: state <= ZERO; // INC ZP,X
+                  8'hF5: state <= ZPG0; // SBC ZP,X
+                  8'hF6: state <= ZPW0; // INC ZP,X
                   8'hF8: state <= SYNC; // SED
                   8'hF9: state <= ABS0; // SBC ABS,Y
                   8'hFA: state <= PLA0; // PLX
                   8'hFD: state <= ABS0; // SBC ABS,X
-                  8'hFE: state <= ABS0; // INC ABS,X
-
-               default:  state <= XXXX; // don't care;
+                  8'hFE: state <= ABW0; // INC ABS,X
                endcase
 
         IMMI:  state <= SYNC;
         PHA0:  state <= SYNC;
         PLA0:  state <= SYNC;
-        ZERO:  state <= DATA;
-        DATA:  state <= rmw ? RDWR : SYNC;
+        ZPG0:  state <= DATA;
+        ZPW0:  state <= RMW0;
+        DATA:  state <= SYNC;
+        RMW0:  state <= RMW1;
+        RMW1:  state <= SYNC;
         ABS0:  state <= ABS1;
         ABS1:  state <= DATA;
+        ABW0:  state <= ABW1;
+        ABW1:  state <= RMW0;
         BRA0:  state <= SYNC;
         JSR0:  state <= JSR1;
         JSR1:  state <= JSR2;
-        JSR2:  state <= JSR3;
-        JSR3:  state <= SYNC;
+        JSR2:  state <= JMP1;
         RTS0:  state <= RTS1;
         RTS1:  state <= RTS2;
         RTS2:  state <= SYNC;
@@ -724,7 +733,7 @@ always @(posedge clk)
         IDX0:  state <= IDX1;
         IDX1:  state <= IDX2;
         IDX2:  state <= DATA;
-        RDWR:  state <= SYNC;
+        RMW1:  state <= SYNC;
         BRK0:  state <= BRK1;
         BRK1:  state <= BRK2;
         BRK2:  state <= BRK3;
@@ -732,8 +741,6 @@ always @(posedge clk)
         RTI0:  state <= RTS0;
         IND0:  state <= IND1;
         IND1:  state <= JMP0;
-        RST0:  state <= JMP0;
-     default:  state <= XXXX; // don't care;
     endcase
 
 /*
@@ -962,10 +969,13 @@ always @*
         IMMI: statename = "IMMI";
         PHA0: statename = "PHA0";
         PLA0: statename = "PLA0";
-        ZERO: statename = "ZERO";
+        ZPG0: statename = "ZPG0";
+        ZPW0: statename = "ZPW0";
         DATA: statename = "DATA";
         ABS0: statename = "ABS0";
         ABS1: statename = "ABS1";
+        ABW0: statename = "ABW0";
+        ABW1: statename = "ABW1";
         BRA0: statename = "BRA0";
         IND0: statename = "IND0";
         IND1: statename = "IND1";
@@ -974,20 +984,19 @@ always @*
         JSR0: statename = "JSR0";
         JSR1: statename = "JSR1";
         JSR2: statename = "JSR2";
-        JSR3: statename = "JSR3";
         RTS0: statename = "RTS0";
         RTS1: statename = "RTS1";
         RTS2: statename = "RTS2";
         IDX0: statename = "IDX0";
         IDX1: statename = "IDX1";
         IDX2: statename = "IDX2";
-        RDWR: statename = "RDWR";
+        RMW0: statename = "RMW0";
+        RMW1: statename = "RMW1";
         BRK0: statename = "BRK0";
         BRK1: statename = "BRK1";
         BRK2: statename = "BRK2";
         BRK3: statename = "BRK3";
         RTI0: statename = "RTI0";
-        RST0: statename = "RST0";
     default : statename = "?";
     endcase
 
