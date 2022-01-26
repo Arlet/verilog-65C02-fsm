@@ -57,7 +57,7 @@ wire rti = control[19];
 wire txs = control[18];
 wire rmw = control[17];
 wire sta = control[16];
-wire ld = control[15];
+wire lda = control[15];
 wire [1:0] ctl_src = control[14:13];
 wire [1:0] ctl_dst = control[12:11];
 
@@ -104,7 +104,7 @@ always @*
  * write register file. 
  */
 always @(posedge clk)
-    if( ld & sync )
+    if( lda & sync )
         regs[ctl_dst] <= alu_out;
 
 /*
@@ -272,7 +272,7 @@ always @(posedge clk)
         RTS0: if( rti )                 N <= DI[7];
         SYNC: if( plp )                 N <= DI[7];
               else if( bit_isn )        N <= DR[7];
-              else if( ld )             N <= alu_N;
+              else if( lda )            N <= alu_N;
               else if( cmp )            N <= alu_N;
               else if( bit_isn )        N <= alu_N;
         RMW1:                           N <= alu_N;
@@ -319,7 +319,7 @@ always @(posedge clk)
     case( state )
         RTS0: if( rti )                 Z <= DI[1];
         SYNC: if( plp )                 Z <= DI[1]; 
-              else if( ld )             Z <= alu_Z;
+              else if( lda )            Z <= alu_Z;
               else if( cmp )            Z <= alu_Z;
               else if( bit_isn )        Z <= alu_Z;
         RMW1:                           Z <= alu_Z;
