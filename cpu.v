@@ -8,7 +8,7 @@
 module cpu( 
     input clk,                          // CPU clock
     input RST,                          // RST signal
-    output [15:0] AD,                   // address bus (combinatorial) 
+    output [15:0] AB,                   // address bus (combinatorial) 
     output sync,                        // start of new instruction
     input [7:0] DI,                     // data bus input
     output reg [7:0] DO,                // data bus output 
@@ -18,15 +18,8 @@ module cpu(
     input RDY,                          // Ready signal. Pauses CPU when RDY=0
     input debug );                      // debug for simulation
 
-reg [15:0] PC = 16'hf800;               // program counter high
-wire [7:0] PCH = PC[15:8];
-wire [7:0] PCL = PC[7:0];
+wire [15:0] PC;                         // program counter 
 
-reg [8:0] ADL;                          // ADL[8] is carry for ADH 
-reg [7:0] ADH;
-assign AD = { ADH, ADL[7:0] };
-
-reg [15:0] ADR;                         // registered address
 reg [7:0] DR;                           // data register, registered DI 
 wire [7:0] IR;                          // instruction register
 
@@ -38,39 +31,7 @@ wire [7:0] P = { N, V, 1'b1, B, D, I, Z, C };
  * state
  */
 
-parameter
-    SYNC  = 5'd0,
-    IMMI  = 5'd1,
-    PHA0  = 5'd2,
-    PLA0  = 5'd3,
-    ZPG0  = 5'd4,
-    DATA  = 5'd5,
-    ABS0  = 5'd6,
-    ABS1  = 5'd7,
-    BRA0  = 5'd8,
-    JSR0  = 5'd9,
-    JSR1  = 5'd10,
-    JSR2  = 5'd11,
-    RTS0  = 5'd12,
-    RTS1  = 5'd13,
-    RTS2  = 5'd14,
-    JMP0  = 5'd15,
-    JMP1  = 5'd16,
-    IDX0  = 5'd17,
-    IDX1  = 5'd18,
-    IDX2  = 5'd19,
-    BRK0  = 5'd20,
-    BRK1  = 5'd21,
-    BRK2  = 5'd22,
-    BRK3  = 5'd23,
-    RTI0  = 5'd24,
-    IND0  = 5'd25,
-    IND1  = 5'd26,
-    ZPW0  = 5'd27,
-    ABW0  = 5'd28,
-    ABW1  = 5'd29,
-    RMW0  = 5'd30,
-    RMW1  = 5'd31;
+`include "states.i"
 
 /*
  * control bits
@@ -264,107 +225,58 @@ always @(posedge clk)
  * address bus
  */
 
-always @*
-    case( state )
-           BRK0: ADL = S;
-           BRK1: ADL = S;
-           BRK2: ADL = S;
-           BRK3: ADL = PCL;
-           JSR0: ADL = S;
-           JSR1: ADL = S;
-           JSR2: ADL = PCL;
-           ZPG0: ADL = DI + XY;
-           ZPW0: ADL = DI + XY;
-           IDX0: ADL = DI + XY;
-           IDX1: ADL = ADR + 1;
-           IDX2: ADL = DR + XY;
-           DATA: ADL = PCL;
-           ABS0: ADL = PCL;
-           ABS1: ADL = DR + XY;
-           ABW0: ADL = PCL;
-           ABW1: ADL = DR + XY;
-           JMP0: ADL = PCL;
-           JMP1: ADL = DR;
-           IMMI: ADL = PCL;
-           SYNC: ADL = PCL; 
-           RMW0: ADL = PCL;
-           RMW1: ADL = ADR;
-           PHA0: ADL = S;
-           PLA0: ADL = S+1;
-           RTI0: ADL = S+1;
-           RTS0: ADL = S+1;
-           RTS1: ADL = S+1;
-           RTS2: ADL = DR + !rti;
-           BRA0: if( !cond )      ADL = PCL;
-                 else if( DI[7] ) ADL = PCL + DI;
-                 else             ADL = PCL + DI;
-           IND0: ADL = PCL;
-           IND1: ADL = DR;
-    endcase
+wire PCL_CO;
+
+reg [9:0] ab_op;
+
+wire [6:0] adh_op = {ab_op[7:3],ab_op[9:8]};
 
 always @*
     case( state )
-           BRK0: ADH = 8'h01;
-           BRK1: ADH = 8'h01;
-           BRK2: ADH = 8'h01;
-           BRK3: ADH = PCH;
-           JSR0: ADH = 8'h01;
-           JSR1: ADH = 8'h01;
-           JSR2: ADH = PCH;
-           ZPG0: ADH = 8'h00;
-           ZPW0: ADH = 8'h00;
-           IDX0: ADH = 8'h00;
-           IDX1: ADH = ADR[15:8] + ADL[8]; 
-           IDX2: ADH = DI + ADL[8];
-           DATA: ADH = PCH;
-           ABS0: ADH = PCH;
-           ABS1: ADH = DI + ADL[8];
-           ABW0: ADH = PCH;
-           ABW1: ADH = DI + ADL[8];
-           JMP0: ADH = PCH;
-           JMP1: ADH = DI;
-           IMMI: ADH = PCH;
-           SYNC: ADH = PCH; 
-           RMW0: ADH = PCH;
-           RMW1: ADH = ADR[15:8];
-           PHA0: ADH = 8'h01;
-           PLA0: ADH = 8'h01;
-           RTI0: ADH = 8'h01;
-           RTS0: ADH = 8'h01;
-           RTS1: ADH = 8'h01;
-           RTS2: ADH = DI + ADL[8];
-           BRA0: if( !cond )      ADH = PCH;
-                 else if( DI[7] ) ADH = PCH + 8'hff + ADL[8];
-                 else             ADH = PCH + 8'h00 + ADL[8];
-           IND0: ADH = PCH;
-           IND1: ADH = DI;
+       ABS0: ab_op = 10'b00_1_01_01_00_0;			//
+       ABS1: ab_op = 10'b10_1_00_10_01_0;			//
+       ABW0: ab_op = 10'b00_1_01_01_00_0;			//
+       ABW1: ab_op = 10'b10_1_00_10_01_0;			//
+       BRA0: ab_op = {cond, cond & DI[7], 5'b1_01_01, cond, 2'b0_0};			//
+       BRK0: ab_op = 10'b01_1_00_00_00_0;			//
+       BRK1: ab_op = 10'b01_1_00_00_00_0;			//
+       BRK2: ab_op = 10'b01_1_11_00_00_0;			//
+       BRK3: ab_op = 10'b00_1_01_01_00_0;			//
+       DATA: ab_op = 10'b00_1_01_01_00_0;			//
+       IDX0: ab_op = 10'b00_1_00_00_11_0;			//
+       IDX1: ab_op = 10'b10_1_00_11_00_1;			//
+       IDX2: ab_op = 10'b10_1_00_10_01_0;			//
+       IMMI: ab_op = 10'b00_1_01_01_00_0;			//
+       IND0: ab_op = 10'b00_1_00_01_00_0;			//
+       IND1: ab_op = 10'b00_1_01_10_00_0;			//
+       JMP0: ab_op = 10'b00_1_00_01_00_0;			//
+       JMP1: ab_op = 10'b00_1_01_10_00_0;			//
+       JSR0: ab_op = 10'b01_1_00_00_00_0;			//
+       JSR1: ab_op = 10'b01_1_00_00_00_0;			//
+       JSR2: ab_op = 10'b00_1_00_01_00_0;			//
+       PHA0: ab_op = 10'b01_1_00_00_00_0;			//
+       PLA0: ab_op = 10'b01_1_00_00_00_1;			//
+       RMW0: ab_op = 10'b00_0_01_01_00_0;			//
+       RMW1: ab_op = 10'b00_1_00_11_00_0;			//
+       RTI0: ab_op = 10'b01_1_00_00_00_1;			//
+       RTS0: ab_op = 10'b01_1_00_00_00_1;			//
+       RTS1: ab_op = 10'b01_1_00_00_00_1;			//
+       RTS2: ab_op = {9'b10_1_01_10_00, !rti};		//
+       SYNC: ab_op = 10'b00_1_01_01_00_0;			//
+       ZPG0: ab_op = 10'b00_1_00_00_11_0;			//
+       ZPW0: ab_op = 10'b00_1_00_00_11_0;			//
     endcase
 
-/* 
- * make copy of current address for read-modify-write
- */
-always @(posedge clk)
-    if( state != RMW0 )
-        ADR <= AD;
-
-
-always @(posedge clk)
-    if( RST )
-        PC <= 16'hfffc;
-    else case( state )
-        SYNC: PC <= AD + 1;
-        DATA: PC <= AD + 1;
-        RMW0: PC <= AD + 1;
-        IMMI: PC <= AD + 1;
-        ABS0: PC <= AD + 1;
-        ABW0: PC <= AD + 1;
-        BRA0: PC <= AD + 1;
-        RTS2: PC <= AD + 1;
-        JMP1: PC <= AD + 1;
-        IND1: PC <= AD + 1;
-        BRK2: PC <= 16'hfffe;
-        BRK3: PC <= AD + 1;
-    endcase
+ab ab(
+    .clk(clk),
+    .RST(RST),
+    .ab_op(ab_op),
+    .S(S),
+    .DI(DI),
+    .DR(DR),
+    .XY(XY),
+    .AB(AB),
+    .PC(PC) );
 
 /*
  * write enable
@@ -395,10 +307,10 @@ always @*
        ABS1: DO = alu_out;
        RMW1: DO = alu_out;
        IDX2: DO = alu_out;
-       JSR0: DO = PCH;
-       JSR1: DO = PCL;
-       BRK0: DO = PCH;
-       BRK1: DO = PCL;
+       JSR0: DO = PC[15:8];
+       JSR1: DO = PC[7:0];
+       BRK0: DO = PC[15:8];
+       BRK1: DO = PC[7:0];
        BRK2: DO = P;
     default: DO = 8'h55;
     endcase
@@ -1116,9 +1028,9 @@ wire [7:0] Y = regs[SEL_Y];
 wire [7:0] A = regs[SEL_A];
 
 always @( posedge clk ) begin
-    if( !debug || cycle < 1000 || cycle[10:0] == 0 )
-      $display( "%4d %s %s %s PC:%h AD:%h DI:%h HOLD:%h DO:%h DR:%h IR:%h WE:%d ALU:%h S:%02x A:%h X:%h Y:%h R:%h LD:%h P:%s%s1%s%s%s%s%s %d", 
-                 cycle, R_, opcode, statename, PC, AD, DI, DIHOLD, DO, DR, IR, WE, alu_out, S, A, X, Y, R, ld, N_, V_, B_, D_, I_, Z_, C_, alu_C );
+    if( !debug || cycle < 5000 || cycle[10:0] == 0 )
+      $display( "%4d %s %s %s PC:%h AB:%h DI:%h HOLD:%h DO:%h DR:%h IR:%h WE:%d ALU:%h S:%02x A:%h X:%h Y:%h R:%h LD:%h P:%s%s1%s%s%s%s%s %d", 
+                 cycle, R_, opcode, statename, PC, AB, DI, DIHOLD, DO, DR, IR, WE, alu_out, S, A, X, Y, R, ld, N_, V_, B_, D_, I_, Z_, C_, alu_C );
       if( instruction == 8'hdb )
         $finish( );
 end
