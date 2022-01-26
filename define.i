@@ -33,31 +33,51 @@ parameter
     RMW1  = 5'd31;
 
 parameter
+    NOP   = 2'd00,
+    LDA   = 2'd01,
+    STA   = 2'd10,
+    RMW   = 2'd11;
+
+parameter
+    DST__ = 2'bxx,
+    DST_X = 2'b01,
+    DST_Y = 2'b10,
+    DST_A = 2'b11;
+
+parameter
+    SRC__ = 2'bxx,
+    SRC_Z = 2'b00,
+    SRC_X = 2'b01,
+    SRC_Y = 2'b10,
+    SRC_A = 2'b11;
+
+parameter
     IZ = 2'b00,
     IX = 2'b01,
     IY = 2'b10;
 
-parameter
-    ALU_XXXX = 9'bxxxxxxxxx,
-    ALU_REG  = 9'b000000000,
-    ALU_INCA = 9'b000000001,
-    ALU_DECA = 9'b000001000,
-    ALU_LDA  = 9'b000010000,
-    ALU_INCM = 9'b000010001,
-    ALU_DECM = 9'b000011000,
-    ALU_ADC  = 9'b000100110,
-    ALU_CMP  = 9'b000101101,
-    ALU_SBC  = 9'b000101110,
-    ALU_ORA  = 9'b001000000,
-    ALU_AND  = 9'b001010000,
-    ALU_EOR  = 9'b001100000,
-    ALU_TSX  = 9'b001110000,
-    ALU_PLA  = 9'b010000000,
-    ALU_ASLA = 9'b100000000,
-    ALU_ROLA = 9'b100000011,
-    ALU_LSRA = 9'b110000000,
-    ALU_RORA = 9'b110000011,
-    ALU_ASLM = 9'b100010000,
-    ALU_ROLM = 9'b100010011,
-    ALU_LSRM = 9'b110010000,
-    ALU_RORM = 9'b110010011;
+parameter //      SR__A__B__C      SR   A     B   C
+          // -----------------------------------------
+    ALU_____ = 9'bxx_xxx_xx_xx,
+    ALU_REG  = 9'b00_000_00_00, //      R  +  0 + 0
+    ALU_INCA = 9'b00_000_00_01, //      R  +  0 + 1
+    ALU_DECA = 9'b00_000_10_00, //      R  + -1 + 0
+    ALU_LDA  = 9'b00_001_00_00, //      M  +  0 + 0
+    ALU_INCM = 9'b00_001_00_01, //      M  +  0 + 1
+    ALU_DECM = 9'b00_001_10_00, //      M  + -1 + 0
+    ALU_ADC  = 9'b00_000_01_10, //      R  +  M + C
+    ALU_CMP  = 9'b00_000_11_01, //      R  + ~M + 1
+    ALU_SBC  = 9'b00_000_11_10, //      R  + ~M + C
+    ALU_ORA  = 9'b00_100_00_00, //     R|M +  0 + 0
+    ALU_AND  = 9'b00_101_00_00, //     R&M +  0 + 0
+    ALU_EOR  = 9'b00_110_00_00, //     R^M +  0 + 0
+    ALU_TSX  = 9'b00_111_00_00, //      S  +  0 + 0
+    ALU_PLA  = 9'b01_xxx_xx_xx, //         DI   
+    ALU_ASLA = 9'b10_000_00_00, // asl( R  +  0 + 0)
+    ALU_ROLA = 9'b10_000_00_11, // rol( R  +  0 + 0)
+    ALU_LSRA = 9'b11_000_00_00, // lsr( R  +  0 + 0)
+    ALU_RORA = 9'b11_000_00_11, // ror( R  +  0 + 0)
+    ALU_ASLM = 9'b10_001_00_00, // asl( M  +  0 + 0)
+    ALU_ROLM = 9'b10_001_00_11, // rol( M  +  0 + 0)
+    ALU_LSRM = 9'b11_001_00_00, // lsr( M  +  0 + 0)
+    ALU_RORM = 9'b11_001_00_11; // ror( M  +  0 + 0)

@@ -43,27 +43,24 @@ wire [7:0] alu_out;
 reg [4:0] state;
 wire [4:0] init_state;
 assign sync = (state == SYNC);
-reg [29:0] control;
-wire adc_sbc = control[28];
-wire cmp = control[27];
-wire cli_sei = control[26];
-wire cld_sed = control[25];
-wire clc_sec = control[24];
-wire bit_isn = control[23];
-wire clv = control[22];
-wire php = control[21];
-wire plp = control[20];
-wire rti = control[19];
-wire txs = control[18];
-wire rmw = control[17];
-wire sta = control[16];
-wire lda = control[15];
+reg [19:0] control;
+
+wire adc_sbc = control[19];
+wire cmp     = control[18];
+wire bit_isn = control[17];
+
+// special instructions 
+reg clc, sec, cld, sed, cli, sei, clv, plp, php, rti, txs;
+
+wire store = control[16];
+wire load = control[15];
+wire rmw = load & store;
+
 wire [1:0] ctl_src = control[14:13];
 wire [1:0] ctl_dst = control[12:11];
 
 wire [8:0] alu_op = control[10:2];
 wire shift = alu_op[8];
-reg set;
 reg [3:0] cond_code;
 reg cond;
 
@@ -104,7 +101,7 @@ always @*
  * write register file. 
  */
 always @(posedge clk)
-    if( lda & sync )
+    if( load & ~rmw & sync )
         regs[ctl_dst] <= alu_out;
 
 /*
@@ -228,9 +225,9 @@ ab ab(
 
 always @*
     case( state )
-       ZPG0: WE = sta;
-       ABS1: WE = sta;
-       IDX2: WE = sta;
+       ZPG0: WE = store;
+       ABS1: WE = store;
+       IDX2: WE = store;
        RMW1: WE = 1;
        JSR0: WE = 1;
        JSR1: WE = 1;
@@ -272,7 +269,7 @@ always @(posedge clk)
         RTS0: if( rti )                 N <= DI[7];
         SYNC: if( plp )                 N <= DI[7];
               else if( bit_isn )        N <= DR[7];
-              else if( lda )            N <= alu_N;
+              else if( load & ~rmw )    N <= alu_N;
               else if( cmp )            N <= alu_N;
               else if( bit_isn )        N <= alu_N;
         RMW1:                           N <= alu_N;
@@ -298,7 +295,8 @@ always @(posedge clk)
     case( state )
         RTS0: if( rti )                 D <= DI[3];
         SYNC: if( plp )                 D <= DI[3];
-              else if( cld_sed )        D <= set;
+              else if( cld )            D <= 0;
+              else if( sed )            D <= 1;
     endcase
 
 /*
@@ -309,7 +307,8 @@ always @(posedge clk)
         BRK3:                           I <= 1;
         RTS0: if( rti )                 I <= DI[2];
         SYNC: if( plp )                 I <= DI[2]; 
-              else if( cli_sei )        I <= set;
+              else if( cli )            I <= 0;
+              else if( sei )            I <= 1;
     endcase
 
 /*
@@ -319,7 +318,7 @@ always @(posedge clk)
     case( state )
         RTS0: if( rti )                 Z <= DI[1];
         SYNC: if( plp )                 Z <= DI[1]; 
-              else if( lda )            Z <= alu_Z;
+              else if( load & ~rmw )    Z <= alu_Z;
               else if( cmp )            Z <= alu_Z;
               else if( bit_isn )        Z <= alu_Z;
         RMW1:                           Z <= alu_Z;
@@ -332,7 +331,8 @@ always @(posedge clk)
     case( state )
         RTS0: if( rti )                 C <= DI[0];
         SYNC: if( plp )                 C <= DI[0];
-              else if( clc_sec )        C <= set;
+              else if( clc )            C <= 0;
+              else if( sec )            C <= 1;
               else if( cmp )            C <= alu_C;
               else if( shift & ~rmw )   C <= alu_C;
               else if( adc_sbc )        C <= alu_C;
@@ -354,12 +354,6 @@ always @(posedge clk)
     endcase
 
 assign IR = DIHOLD[8] ? DIHOLD[7:0] : DI;
-
-/*
- * flag set bit to distinguish CLC/SEC and friends
- */
-always @(posedge clk) 
-    set <= IR[5];
 
 /*
  * condition code
@@ -422,7 +416,7 @@ always @(posedge clk)
 /*
  * decode vector
  */
-reg [33:0] decode;
+reg [24:0] decode;
 
 assign init_state = decode[4:0];
 
@@ -430,217 +424,230 @@ assign init_state = decode[4:0];
  * control vector
  */
 always @(posedge clk)
-    if( sync )
-        control <= decode[33:5];
+    if( sync ) begin
+        control <= decode[24:5];
+        clc <= (IR == 8'h18);
+        sec <= (IR == 8'h38);
+        cld <= (IR == 8'hD8);
+        sed <= (IR == 8'hF8);
+        cli <= (IR == 8'h58);
+        sei <= (IR == 8'h78);
+        rti <= (IR == 8'h40);
+        clv <= (IR == 8'hB8);
+        php <= (IR == 8'h08);
+        plp <= (IR == 8'h28);
+        txs <= (IR == 8'h9A);
+    end
 /*
  * decode vector
  */
 always @*
     case( IR )
-         //                    +=IDC_BVPPIS_WSL_SR_DS    ALU        YX 
-         8'h6D: decode = { 18'b10000_000000_001_11_11, ALU_ADC , IZ, ABS0 }; // ADC ABS
-         8'h7D: decode = { 18'b10000_000000_001_11_11, ALU_ADC , IX, ABS0 }; // ADC ABS,X
-         8'h79: decode = { 18'b10000_000000_001_11_11, ALU_ADC , IY, ABS0 }; // ADC ABS,Y
-         8'h69: decode = { 18'b10000_000000_001_11_11, ALU_ADC , IZ, IMM0 }; // ADC #IMM
-         8'h65: decode = { 18'b10000_000000_001_11_11, ALU_ADC , IZ, ZPG0 }; // ADC ZP
-         8'h72: decode = { 18'b10000_000000_001_11_11, ALU_ADC , IZ, IDX0 }; // ADC (ZP)
-         8'h61: decode = { 18'b10000_000000_001_11_11, ALU_ADC , IX, IDX0 }; // ADC (ZP,X)
-         8'h75: decode = { 18'b10000_000000_001_11_11, ALU_ADC , IX, ZPG0 }; // ADC ZP,X
-         8'h71: decode = { 18'b10000_000000_001_11_11, ALU_ADC , IY, IDX0 }; // ADC (ZP),Y
+         //                   +=_B  L/S   SRC    DST    ALU      YX  MODE
+         8'h6D: decode = { 3'b10_0, LDA, SRC_A, DST_A, ALU_ADC , IZ, ABS0 }; // ADC ABS
+         8'h7D: decode = { 3'b10_0, LDA, SRC_A, DST_A, ALU_ADC , IX, ABS0 }; // ADC ABS,X
+         8'h79: decode = { 3'b10_0, LDA, SRC_A, DST_A, ALU_ADC , IY, ABS0 }; // ADC ABS,Y
+         8'h69: decode = { 3'b10_0, LDA, SRC_A, DST_A, ALU_ADC , IZ, IMM0 }; // ADC #IMM
+         8'h65: decode = { 3'b10_0, LDA, SRC_A, DST_A, ALU_ADC , IZ, ZPG0 }; // ADC ZP
+         8'h72: decode = { 3'b10_0, LDA, SRC_A, DST_A, ALU_ADC , IZ, IDX0 }; // ADC (ZP)
+         8'h61: decode = { 3'b10_0, LDA, SRC_A, DST_A, ALU_ADC , IX, IDX0 }; // ADC (ZP,X)
+         8'h75: decode = { 3'b10_0, LDA, SRC_A, DST_A, ALU_ADC , IX, ZPG0 }; // ADC ZP,X
+         8'h71: decode = { 3'b10_0, LDA, SRC_A, DST_A, ALU_ADC , IY, IDX0 }; // ADC (ZP),Y
 
-         8'hED: decode = { 18'b10000_000000_001_11_11, ALU_SBC , IZ, ABS0 }; // SBC ABS
-         8'hFD: decode = { 18'b10000_000000_001_11_11, ALU_SBC , IX, ABS0 }; // SBC ABS,X
-         8'hF9: decode = { 18'b10000_000000_001_11_11, ALU_SBC , IY, ABS0 }; // SBC ABS,Y
-         8'hE9: decode = { 18'b10000_000000_001_11_11, ALU_SBC , IZ, IMM0 }; // SBC #IMM
-         8'hE5: decode = { 18'b10000_000000_001_11_11, ALU_SBC , IZ, ZPG0 }; // SBC ZP
-         8'hF2: decode = { 18'b10000_000000_001_11_11, ALU_SBC , IZ, IDX0 }; // SBC (ZP)
-         8'hE1: decode = { 18'b10000_000000_001_11_11, ALU_SBC , IX, IDX0 }; // SBC (ZP,X)
-         8'hF5: decode = { 18'b10000_000000_001_11_11, ALU_SBC , IX, ZPG0 }; // SBC ZP,X
-         8'hF1: decode = { 18'b10000_000000_001_11_11, ALU_SBC , IY, IDX0 }; // SBC (ZP),Y
+         8'hED: decode = { 3'b10_0, LDA, SRC_A, DST_A, ALU_SBC , IZ, ABS0 }; // SBC ABS
+         8'hFD: decode = { 3'b10_0, LDA, SRC_A, DST_A, ALU_SBC , IX, ABS0 }; // SBC ABS,X
+         8'hF9: decode = { 3'b10_0, LDA, SRC_A, DST_A, ALU_SBC , IY, ABS0 }; // SBC ABS,Y
+         8'hE9: decode = { 3'b10_0, LDA, SRC_A, DST_A, ALU_SBC , IZ, IMM0 }; // SBC #IMM
+         8'hE5: decode = { 3'b10_0, LDA, SRC_A, DST_A, ALU_SBC , IZ, ZPG0 }; // SBC ZP
+         8'hF2: decode = { 3'b10_0, LDA, SRC_A, DST_A, ALU_SBC , IZ, IDX0 }; // SBC (ZP)
+         8'hE1: decode = { 3'b10_0, LDA, SRC_A, DST_A, ALU_SBC , IX, IDX0 }; // SBC (ZP,X)
+         8'hF5: decode = { 3'b10_0, LDA, SRC_A, DST_A, ALU_SBC , IX, ZPG0 }; // SBC ZP,X
+         8'hF1: decode = { 3'b10_0, LDA, SRC_A, DST_A, ALU_SBC , IY, IDX0 }; // SBC (ZP),Y
 
-         8'h2D: decode = { 18'b00000_000000_001_11_11, ALU_AND , IZ, ABS0 }; // AND ABS
-         8'h3D: decode = { 18'b00000_000000_001_11_11, ALU_AND , IX, ABS0 }; // AND ABS,X
-         8'h39: decode = { 18'b00000_000000_001_11_11, ALU_AND , IY, ABS0 }; // AND ABS,Y
-         8'h29: decode = { 18'b00000_000000_001_11_11, ALU_AND , IZ, IMM0 }; // AND #IMM
-         8'h25: decode = { 18'b00000_000000_001_11_11, ALU_AND , IZ, ZPG0 }; // AND ZP
-         8'h32: decode = { 18'b00000_000000_001_11_11, ALU_AND , IZ, IDX0 }; // AND (ZP)
-         8'h21: decode = { 18'b00000_000000_001_11_11, ALU_AND , IX, IDX0 }; // AND (ZP,X)
-         8'h35: decode = { 18'b00000_000000_001_11_11, ALU_AND , IX, ZPG0 }; // AND ZP,X
-         8'h31: decode = { 18'b00000_000000_001_11_11, ALU_AND , IY, IDX0 }; // AND (ZP),Y
+         8'h2D: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_AND , IZ, ABS0 }; // AND ABS
+         8'h3D: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_AND , IX, ABS0 }; // AND ABS,X
+         8'h39: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_AND , IY, ABS0 }; // AND ABS,Y
+         8'h29: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_AND , IZ, IMM0 }; // AND #IMM
+         8'h25: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_AND , IZ, ZPG0 }; // AND ZP
+         8'h32: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_AND , IZ, IDX0 }; // AND (ZP)
+         8'h21: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_AND , IX, IDX0 }; // AND (ZP,X)
+         8'h35: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_AND , IX, ZPG0 }; // AND ZP,X
+         8'h31: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_AND , IY, IDX0 }; // AND (ZP),Y
 
-         8'h0D: decode = { 18'b00000_000000_001_11_11, ALU_ORA , IZ, ABS0 }; // ORA ABS
-         8'h1D: decode = { 18'b00000_000000_001_11_11, ALU_ORA , IX, ABS0 }; // ORA ABS,X
-         8'h19: decode = { 18'b00000_000000_001_11_11, ALU_ORA , IY, ABS0 }; // ORA ABS,Y
-         8'h09: decode = { 18'b00000_000000_001_11_11, ALU_ORA , IZ, IMM0 }; // ORA #IMM
-         8'h05: decode = { 18'b00000_000000_001_11_11, ALU_ORA , IZ, ZPG0 }; // ORA ZP
-         8'h12: decode = { 18'b00000_000000_001_11_11, ALU_ORA , IZ, IDX0 }; // ORA (ZP)
-         8'h01: decode = { 18'b00000_000000_001_11_11, ALU_ORA , IX, IDX0 }; // ORA (ZP,X)
-         8'h15: decode = { 18'b00000_000000_001_11_11, ALU_ORA , IX, ZPG0 }; // ORA ZP,X
-         8'h11: decode = { 18'b00000_000000_001_11_11, ALU_ORA , IY, IDX0 }; // ORA (ZP),Y
+         8'h0D: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_ORA , IZ, ABS0 }; // ORA ABS
+         8'h1D: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_ORA , IX, ABS0 }; // ORA ABS,X
+         8'h19: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_ORA , IY, ABS0 }; // ORA ABS,Y
+         8'h09: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_ORA , IZ, IMM0 }; // ORA #IMM
+         8'h05: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_ORA , IZ, ZPG0 }; // ORA ZP
+         8'h12: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_ORA , IZ, IDX0 }; // ORA (ZP)
+         8'h01: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_ORA , IX, IDX0 }; // ORA (ZP,X)
+         8'h15: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_ORA , IX, ZPG0 }; // ORA ZP,X
+         8'h11: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_ORA , IY, IDX0 }; // ORA (ZP),Y
 
-         8'hAD: decode = { 18'b00000_000000_001_11_11, ALU_LDA , IZ, ABS0 }; // LDA ABS
-         8'hBD: decode = { 18'b00000_000000_001_11_11, ALU_LDA , IX, ABS0 }; // LDA ABS,X
-         8'hB9: decode = { 18'b00000_000000_001_11_11, ALU_LDA , IY, ABS0 }; // LDA ABS,Y
-         8'hA9: decode = { 18'b00000_000000_001_11_11, ALU_LDA , IZ, IMM0 }; // LDA #IMM
-         8'hA5: decode = { 18'b00000_000000_001_11_11, ALU_LDA , IZ, ZPG0 }; // LDA ZP
-         8'hB2: decode = { 18'b00000_000000_001_11_11, ALU_LDA , IZ, IDX0 }; // LDA (ZP)
-         8'hA1: decode = { 18'b00000_000000_001_11_11, ALU_LDA , IX, IDX0 }; // LDA (ZP,X)
-         8'hB5: decode = { 18'b00000_000000_001_11_11, ALU_LDA , IX, ZPG0 }; // LDA ZP,X
-         8'hB1: decode = { 18'b00000_000000_001_11_11, ALU_LDA , IY, IDX0 }; // LDA (ZP),Y
+         8'hAD: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_LDA , IZ, ABS0 }; // LDA ABS
+         8'hBD: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_LDA , IX, ABS0 }; // LDA ABS,X
+         8'hB9: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_LDA , IY, ABS0 }; // LDA ABS,Y
+         8'hA9: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_LDA , IZ, IMM0 }; // LDA #IMM
+         8'hA5: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_LDA , IZ, ZPG0 }; // LDA ZP
+         8'hB2: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_LDA , IZ, IDX0 }; // LDA (ZP)
+         8'hA1: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_LDA , IX, IDX0 }; // LDA (ZP,X)
+         8'hB5: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_LDA , IX, ZPG0 }; // LDA ZP,X
+         8'hB1: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_LDA , IY, IDX0 }; // LDA (ZP),Y
 
-         8'hCD: decode = { 18'b01000_000000_000_11_11, ALU_CMP , IZ, ABS0 }; // CMP ABS
-         8'hDD: decode = { 18'b01000_000000_000_11_11, ALU_CMP , IX, ABS0 }; // CMP ABS,X
-         8'hD9: decode = { 18'b01000_000000_000_11_11, ALU_CMP , IY, ABS0 }; // CMP ABS,Y
-         8'hC9: decode = { 18'b01000_000000_000_11_11, ALU_CMP , IZ, IMM0 }; // CMP #IMM
-         8'hC5: decode = { 18'b01000_000000_000_11_11, ALU_CMP , IZ, ZPG0 }; // CMP ZP
-         8'hD2: decode = { 18'b01000_000000_000_11_11, ALU_CMP , IZ, IDX0 }; // CMP (ZP)
-         8'hC1: decode = { 18'b01000_000000_000_11_11, ALU_CMP , IX, IDX0 }; // CMP (ZP,X)
-         8'hD5: decode = { 18'b01000_000000_000_11_11, ALU_CMP , IX, ZPG0 }; // CMP ZP,X
-         8'hD1: decode = { 18'b01000_000000_000_11_11, ALU_CMP , IY, IDX0 }; // CMP (ZP),Y
+         8'hCD: decode = { 3'b01_0, NOP, SRC_A, DST__, ALU_CMP , IZ, ABS0 }; // CMP ABS
+         8'hDD: decode = { 3'b01_0, NOP, SRC_A, DST__, ALU_CMP , IX, ABS0 }; // CMP ABS,X
+         8'hD9: decode = { 3'b01_0, NOP, SRC_A, DST__, ALU_CMP , IY, ABS0 }; // CMP ABS,Y
+         8'hC9: decode = { 3'b01_0, NOP, SRC_A, DST__, ALU_CMP , IZ, IMM0 }; // CMP #IMM
+         8'hC5: decode = { 3'b01_0, NOP, SRC_A, DST__, ALU_CMP , IZ, ZPG0 }; // CMP ZP
+         8'hD2: decode = { 3'b01_0, NOP, SRC_A, DST__, ALU_CMP , IZ, IDX0 }; // CMP (ZP)
+         8'hC1: decode = { 3'b01_0, NOP, SRC_A, DST__, ALU_CMP , IX, IDX0 }; // CMP (ZP,X)
+         8'hD5: decode = { 3'b01_0, NOP, SRC_A, DST__, ALU_CMP , IX, ZPG0 }; // CMP ZP,X
+         8'hD1: decode = { 3'b01_0, NOP, SRC_A, DST__, ALU_CMP , IY, IDX0 }; // CMP (ZP),Y
 
-         8'h4D: decode = { 18'b00000_000000_001_11_11, ALU_EOR , IZ, ABS0 }; // EOR ABS
-         8'h5D: decode = { 18'b00000_000000_001_11_11, ALU_EOR , IX, ABS0 }; // EOR ABS,X
-         8'h59: decode = { 18'b00000_000000_001_11_11, ALU_EOR , IY, ABS0 }; // EOR ABS,Y
-         8'h49: decode = { 18'b00000_000000_001_11_11, ALU_EOR , IZ, IMM0 }; // EOR #IMM
-         8'h45: decode = { 18'b00000_000000_001_11_11, ALU_EOR , IZ, ZPG0 }; // EOR ZP
-         8'h52: decode = { 18'b00000_000000_001_11_11, ALU_EOR , IZ, IDX0 }; // EOR (ZP)
-         8'h41: decode = { 18'b00000_000000_001_11_11, ALU_EOR , IX, IDX0 }; // EOR (ZP,X)
-         8'h55: decode = { 18'b00000_000000_001_11_11, ALU_EOR , IX, ZPG0 }; // EOR ZP,X
-         8'h51: decode = { 18'b00000_000000_001_11_11, ALU_EOR , IY, IDX0 }; // EOR (ZP),Y
+         8'h4D: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_EOR , IZ, ABS0 }; // EOR ABS
+         8'h5D: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_EOR , IX, ABS0 }; // EOR ABS,X
+         8'h59: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_EOR , IY, ABS0 }; // EOR ABS,Y
+         8'h49: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_EOR , IZ, IMM0 }; // EOR #IMM
+         8'h45: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_EOR , IZ, ZPG0 }; // EOR ZP
+         8'h52: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_EOR , IZ, IDX0 }; // EOR (ZP)
+         8'h41: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_EOR , IX, IDX0 }; // EOR (ZP,X)
+         8'h55: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_EOR , IX, ZPG0 }; // EOR ZP,X
+         8'h51: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_EOR , IY, IDX0 }; // EOR (ZP),Y
 
-         8'h8D: decode = { 18'b00000_000000_010_11_11, ALU_REG , IZ, ABS0 }; // STA ABS
-         8'h9D: decode = { 18'b00000_000000_010_11_11, ALU_REG , IX, ABS0 }; // STA ABS,X
-         8'h99: decode = { 18'b00000_000000_010_11_11, ALU_REG , IY, ABS0 }; // STA ABS,Y
-         8'h85: decode = { 18'b00000_000000_010_11_11, ALU_REG , IZ, ZPG0 }; // STA ZP
-         8'h92: decode = { 18'b00000_000000_010_11_11, ALU_REG , IZ, IDX0 }; // STA (ZP)
-         8'h81: decode = { 18'b00000_000000_010_11_11, ALU_REG , IX, IDX0 }; // STA (ZP,X)
-         8'h95: decode = { 18'b00000_000000_010_11_11, ALU_REG , IX, ZPG0 }; // STA ZP,X
-         8'h91: decode = { 18'b00000_000000_010_11_11, ALU_REG , IY, IDX0 }; // STA (ZP),Y
+         8'h8D: decode = { 3'b00_0, STA, SRC_A, DST__, ALU_REG , IZ, ABS0 }; // STA ABS
+         8'h9D: decode = { 3'b00_0, STA, SRC_A, DST__, ALU_REG , IX, ABS0 }; // STA ABS,X
+         8'h99: decode = { 3'b00_0, STA, SRC_A, DST__, ALU_REG , IY, ABS0 }; // STA ABS,Y
+         8'h85: decode = { 3'b00_0, STA, SRC_A, DST__, ALU_REG , IZ, ZPG0 }; // STA ZP
+         8'h92: decode = { 3'b00_0, STA, SRC_A, DST__, ALU_REG , IZ, IDX0 }; // STA (ZP)
+         8'h81: decode = { 3'b00_0, STA, SRC_A, DST__, ALU_REG , IX, IDX0 }; // STA (ZP,X)
+         8'h95: decode = { 3'b00_0, STA, SRC_A, DST__, ALU_REG , IX, ZPG0 }; // STA ZP,X
+         8'h91: decode = { 3'b00_0, STA, SRC_A, DST__, ALU_REG , IY, IDX0 }; // STA (ZP),Y
 
-         8'h0A: decode = { 18'b00000_000000_001_11_11, ALU_ASLA, IZ, SYNC }; // ASL A
-         8'h0E: decode = { 18'b00000_000000_100_00_00, ALU_ASLM, IZ, ABW0 }; // ASL ABS
-         8'h1E: decode = { 18'b00000_000000_100_00_00, ALU_ASLM, IX, ABW0 }; // ASL ABS,X
-         8'h06: decode = { 18'b00000_000000_100_00_00, ALU_ASLM, IZ, ZPW0 }; // ASL ZP
-         8'h16: decode = { 18'b00000_000000_100_00_00, ALU_ASLM, IX, ZPW0 }; // ASL ZP,X
+         8'h0A: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_ASLA, IZ, SYNC }; // ASL A
+         8'h4A: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_LSRA, IZ, SYNC }; // LSR A
+         8'h2A: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_ROLA, IZ, SYNC }; // ROL A
+         8'h6A: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_RORA, IZ, SYNC }; // ROR A
 
-         8'h4A: decode = { 18'b00000_000000_001_11_11, ALU_LSRA, IZ, SYNC }; // LSR A
-         8'h4E: decode = { 18'b00000_000000_100_00_00, ALU_LSRM, IZ, ABW0 }; // LSR ABS
-         8'h5E: decode = { 18'b00000_000000_100_00_00, ALU_LSRM, IX, ABW0 }; // LSR ABS,X
-         8'h46: decode = { 18'b00000_000000_100_00_00, ALU_LSRM, IZ, ZPW0 }; // LSR ZP
-         8'h56: decode = { 18'b00000_000000_100_00_00, ALU_LSRM, IX, ZPW0 }; // LSR ZP,X
+         8'h0E: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_ASLM, IZ, ABW0 }; // ASL ABS
+         8'h1E: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_ASLM, IX, ABW0 }; // ASL ABS,X
+         8'h06: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_ASLM, IZ, ZPW0 }; // ASL ZP
+         8'h16: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_ASLM, IX, ZPW0 }; // ASL ZP,X
 
-         8'h2A: decode = { 18'b00000_000000_001_11_11, ALU_ROLA, IZ, SYNC }; // ROL A
-         8'h2E: decode = { 18'b00000_000000_100_00_00, ALU_ROLM, IZ, ABW0 }; // ROL ABS
-         8'h3E: decode = { 18'b00000_000000_100_00_00, ALU_ROLM, IX, ABW0 }; // ROL ABS,X
-         8'h26: decode = { 18'b00000_000000_100_00_00, ALU_ROLM, IZ, ZPW0 }; // ROL ZP
-         8'h36: decode = { 18'b00000_000000_100_00_00, ALU_ROLM, IX, ZPW0 }; // ROL ZP,X
+         8'h4E: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_LSRM, IZ, ABW0 }; // LSR ABS
+         8'h5E: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_LSRM, IX, ABW0 }; // LSR ABS,X
+         8'h46: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_LSRM, IZ, ZPW0 }; // LSR ZP
+         8'h56: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_LSRM, IX, ZPW0 }; // LSR ZP,X
 
-         8'h6A: decode = { 18'b00000_000000_001_11_11, ALU_RORA, IZ, SYNC }; // ROR A
-         8'h6E: decode = { 18'b00000_000000_100_00_00, ALU_RORM, IZ, ABW0 }; // ROR ABS
-         8'h7E: decode = { 18'b00000_000000_100_00_00, ALU_RORM, IX, ABW0 }; // ROR ABS,X
-         8'h66: decode = { 18'b00000_000000_100_00_00, ALU_RORM, IZ, ZPW0 }; // ROR ZP
-         8'h76: decode = { 18'b00000_000000_100_00_00, ALU_RORM, IX, ZPW0 }; // ROR ZP,X
+         8'h2E: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_ROLM, IZ, ABW0 }; // ROL ABS
+         8'h3E: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_ROLM, IX, ABW0 }; // ROL ABS,X
+         8'h26: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_ROLM, IZ, ZPW0 }; // ROL ZP
+         8'h36: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_ROLM, IX, ZPW0 }; // ROL ZP,X
 
-         8'h90: decode = { 18'b00000_000000_000_00_00, ALU_XXXX, IZ, BRA0 }; // BCC
-         8'hB0: decode = { 18'b00000_000000_000_00_00, ALU_XXXX, IZ, BRA0 }; // BCS
-         8'hF0: decode = { 18'b00000_000000_000_00_00, ALU_XXXX, IZ, BRA0 }; // BEQ
-         8'h30: decode = { 18'b00000_000000_000_00_00, ALU_XXXX, IZ, BRA0 }; // BMI
-         8'hD0: decode = { 18'b00000_000000_000_00_00, ALU_XXXX, IZ, BRA0 }; // BNE
-         8'h10: decode = { 18'b00000_000000_000_00_00, ALU_XXXX, IZ, BRA0 }; // BPL
-         8'h80: decode = { 18'b00000_000000_000_00_00, ALU_XXXX, IZ, BRA0 }; // BRA
-         8'h50: decode = { 18'b00000_000000_000_00_00, ALU_XXXX, IZ, BRA0 }; // BVC
-         8'h70: decode = { 18'b00000_000000_000_00_00, ALU_XXXX, IZ, BRA0 }; // BVS
+         8'h6E: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_RORM, IZ, ABW0 }; // ROR ABS
+         8'h7E: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_RORM, IX, ABW0 }; // ROR ABS,X
+         8'h66: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_RORM, IZ, ZPW0 }; // ROR ZP
+         8'h76: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_RORM, IX, ZPW0 }; // ROR ZP,X
 
-         8'h2C: decode = { 18'b00000_100000_000_11_11, ALU_AND , IZ, ABS0 }; // BIT ABS
-         8'h3C: decode = { 18'b00000_100000_000_11_11, ALU_AND , IX, ABS0 }; // BIT ABS,X
-         8'h89: decode = { 18'b00000_100000_000_11_11, ALU_AND , IZ, IMM0 }; // BIT #IMM
-         8'h24: decode = { 18'b00000_100000_000_11_11, ALU_AND , IZ, ZPG0 }; // BIT ZP
-         8'h34: decode = { 18'b00000_100000_000_11_11, ALU_AND , IX, ZPG0 }; // BIT ZP,X
+         8'h90: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, BRA0 }; // BCC
+         8'hB0: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, BRA0 }; // BCS
+         8'hF0: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, BRA0 }; // BEQ
+         8'h30: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, BRA0 }; // BMI
+         8'hD0: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, BRA0 }; // BNE
+         8'h10: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, BRA0 }; // BPL
+         8'h80: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, BRA0 }; // BRA
+         8'h50: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, BRA0 }; // BVC
+         8'h70: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, BRA0 }; // BVS
 
-         8'h18: decode = { 18'b00001_000000_000_00_00, ALU_XXXX, IZ, SYNC }; // CLC
-         8'hD8: decode = { 18'b00010_000000_000_00_00, ALU_XXXX, IZ, SYNC }; // CLD
-         8'h58: decode = { 18'b00100_000000_000_00_00, ALU_XXXX, IZ, SYNC }; // CLI
-         8'hB8: decode = { 18'b00000_010000_000_00_00, ALU_XXXX, IZ, SYNC }; // CLV
-         8'h38: decode = { 18'b00001_000000_000_00_00, ALU_XXXX, IZ, SYNC }; // SEC
-         8'hF8: decode = { 18'b00010_000000_000_00_00, ALU_XXXX, IZ, SYNC }; // SED
-         8'h78: decode = { 18'b00100_000000_000_00_00, ALU_XXXX, IZ, SYNC }; // SEI
-         8'hEA: decode = { 18'b00000_000000_000_00_00, ALU_XXXX, IZ, SYNC }; // NOP
+         8'h2C: decode = { 3'b00_1, NOP, SRC_A, DST__, ALU_AND , IZ, ABS0 }; // BIT ABS
+         8'h3C: decode = { 3'b00_1, NOP, SRC_A, DST__, ALU_AND , IX, ABS0 }; // BIT ABS,X
+         8'h89: decode = { 3'b00_1, NOP, SRC_A, DST__, ALU_AND , IZ, IMM0 }; // BIT #IMM
+         8'h24: decode = { 3'b00_1, NOP, SRC_A, DST__, ALU_AND , IZ, ZPG0 }; // BIT ZP
+         8'h34: decode = { 3'b00_1, NOP, SRC_A, DST__, ALU_AND , IX, ZPG0 }; // BIT ZP,X
 
-         8'hEC: decode = { 18'b01000_000000_000_01_01, ALU_CMP , IZ, ABS0 }; // CPX ABS
-         8'hE0: decode = { 18'b01000_000000_000_01_01, ALU_CMP , IZ, IMM0 }; // CPX #IMM
-         8'hE4: decode = { 18'b01000_000000_000_01_01, ALU_CMP , IZ, ZPG0 }; // CPX ZP
-         8'hCC: decode = { 18'b01000_000000_000_10_10, ALU_CMP , IZ, ABS0 }; // CPY ABS
-         8'hC0: decode = { 18'b01000_000000_000_10_10, ALU_CMP , IZ, IMM0 }; // CPY #IMM
-         8'hC4: decode = { 18'b01000_000000_000_10_10, ALU_CMP , IZ, ZPG0 }; // CPY ZP
+         8'h18: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, SYNC }; // CLC
+         8'hD8: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, SYNC }; // CLD
+         8'h58: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, SYNC }; // CLI
+         8'hB8: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, SYNC }; // CLV
+         8'h38: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, SYNC }; // SEC
+         8'hF8: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, SYNC }; // SED
+         8'h78: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, SYNC }; // SEI
+         8'hEA: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, SYNC }; // NOP
 
-         8'hCE: decode = { 18'b00000_000000_100_00_00, ALU_DECM, IZ, ABW0 }; // DEC ABS
-         8'hDE: decode = { 18'b00000_000000_100_00_00, ALU_DECM, IX, ABW0 }; // DEC ABS,X
-         8'hC6: decode = { 18'b00000_000000_100_00_00, ALU_DECM, IZ, ZPW0 }; // DEC ZP
-         8'hD6: decode = { 18'b00000_000000_100_00_00, ALU_DECM, IX, ZPW0 }; // DEC ZP,X
+         8'hEC: decode = { 3'b01_0, NOP, SRC_X, DST__, ALU_CMP , IZ, ABS0 }; // CPX ABS
+         8'hE0: decode = { 3'b01_0, NOP, SRC_X, DST__, ALU_CMP , IZ, IMM0 }; // CPX #IMM
+         8'hE4: decode = { 3'b01_0, NOP, SRC_X, DST__, ALU_CMP , IZ, ZPG0 }; // CPX ZP
+         8'hCC: decode = { 3'b01_0, NOP, SRC_Y, DST__, ALU_CMP , IZ, ABS0 }; // CPY ABS
+         8'hC0: decode = { 3'b01_0, NOP, SRC_Y, DST__, ALU_CMP , IZ, IMM0 }; // CPY #IMM
+         8'hC4: decode = { 3'b01_0, NOP, SRC_Y, DST__, ALU_CMP , IZ, ZPG0 }; // CPY ZP
 
-         8'hEE: decode = { 18'b00000_000000_100_00_00, ALU_INCM, IZ, ABW0 }; // INC ABS
-         8'hFE: decode = { 18'b00000_000000_100_00_00, ALU_INCM, IX, ABW0 }; // INC ABS,X
-         8'hE6: decode = { 18'b00000_000000_100_00_00, ALU_INCM, IZ, ZPW0 }; // INC ZP
-         8'hF6: decode = { 18'b00000_000000_100_00_00, ALU_INCM, IX, ZPW0 }; // INC ZP,X
+         8'hCE: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_DECM, IZ, ABW0 }; // DEC ABS
+         8'hDE: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_DECM, IX, ABW0 }; // DEC ABS,X
+         8'hC6: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_DECM, IZ, ZPW0 }; // DEC ZP
+         8'hD6: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_DECM, IX, ZPW0 }; // DEC ZP,X
 
-         8'h3A: decode = { 18'b00000_000000_001_11_11, ALU_DECA, IZ, SYNC }; // DEA
-         8'hCA: decode = { 18'b00000_000000_001_01_01, ALU_DECA, IZ, SYNC }; // DEX
-         8'h88: decode = { 18'b00000_000000_001_10_10, ALU_DECA, IZ, SYNC }; // DEY
-         8'h1A: decode = { 18'b00000_000000_001_11_11, ALU_INCA, IZ, SYNC }; // INA
-         8'hE8: decode = { 18'b00000_000000_001_01_01, ALU_INCA, IZ, SYNC }; // INX
-         8'hC8: decode = { 18'b00000_000000_001_10_10, ALU_INCA, IZ, SYNC }; // INY
-         8'hAA: decode = { 18'b00000_000000_001_11_01, ALU_REG , IZ, SYNC }; // TAX
-         8'hA8: decode = { 18'b00000_000000_001_11_10, ALU_REG , IZ, SYNC }; // TAY
-         8'hBA: decode = { 18'b00000_000000_001_00_01, ALU_TSX,  IZ, SYNC }; // TSX
-         8'h8A: decode = { 18'b00000_000000_001_01_11, ALU_REG , IZ, SYNC }; // TXA
-         8'h9A: decode = { 18'b00000_000001_000_01_00, ALU_REG , IZ, SYNC }; // TXS
-         8'h98: decode = { 18'b00000_000000_001_10_11, ALU_REG , IZ, SYNC }; // TYA
+         8'hEE: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_INCM, IZ, ABW0 }; // INC ABS
+         8'hFE: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_INCM, IX, ABW0 }; // INC ABS,X
+         8'hE6: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_INCM, IZ, ZPW0 }; // INC ZP
+         8'hF6: decode = { 3'b00_0, RMW, SRC__, DST__, ALU_INCM, IX, ZPW0 }; // INC ZP,X
 
-         8'h00: decode = { 18'b00000_000000_000_00_00, ALU_XXXX, IZ, BRK0 }; // BRK
-         8'h4C: decode = { 18'b00000_000000_000_00_00, ALU_XXXX, IZ, JMP0 }; // JMP ABS
-         8'h6C: decode = { 18'b00000_000000_000_00_00, ALU_XXXX, IZ, IND0 }; // JMP (IDX)
-         8'h7C: decode = { 18'b00000_000000_000_00_00, ALU_XXXX, IX, IND0 }; // JMP (IDX,X)
-         8'h20: decode = { 18'b00000_000000_000_00_00, ALU_XXXX, IZ, JSR0 }; // JSR ABS
-         8'h40: decode = { 18'b00000_000010_000_00_00, ALU_XXXX, IZ, RTI0 }; // RTI
-         8'h60: decode = { 18'b00000_000000_000_00_00, ALU_XXXX, IZ, RTS0 }; // RTS
+         8'h3A: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_DECA, IZ, SYNC }; // DEA
+         8'hCA: decode = { 3'b00_0, LDA, SRC_X, DST_X, ALU_DECA, IZ, SYNC }; // DEX
+         8'h88: decode = { 3'b00_0, LDA, SRC_Y, DST_Y, ALU_DECA, IZ, SYNC }; // DEY
+         8'h1A: decode = { 3'b00_0, LDA, SRC_A, DST_A, ALU_INCA, IZ, SYNC }; // INA
+         8'hE8: decode = { 3'b00_0, LDA, SRC_X, DST_X, ALU_INCA, IZ, SYNC }; // INX
+         8'hC8: decode = { 3'b00_0, LDA, SRC_Y, DST_Y, ALU_INCA, IZ, SYNC }; // INY
+         8'hAA: decode = { 3'b00_0, LDA, SRC_A, DST_X, ALU_REG , IZ, SYNC }; // TAX
+         8'hA8: decode = { 3'b00_0, LDA, SRC_A, DST_Y, ALU_REG , IZ, SYNC }; // TAY
+         8'hBA: decode = { 3'b00_0, LDA, SRC__, DST_X, ALU_TSX , IZ, SYNC }; // TSX
+         8'h8A: decode = { 3'b00_0, LDA, SRC_X, DST_A, ALU_REG , IZ, SYNC }; // TXA
+         8'h9A: decode = { 3'b00_0, NOP, SRC_X, DST__, ALU_REG , IZ, SYNC }; // TXS
+         8'h98: decode = { 3'b00_0, LDA, SRC_Y, DST_A, ALU_REG , IZ, SYNC }; // TYA
 
-         8'hAE: decode = { 18'b00000_000000_001_00_01, ALU_LDA , IZ, ABS0 }; // LDX ABS
-         8'hBE: decode = { 18'b00000_000000_001_00_01, ALU_LDA , IY, ABS0 }; // LDX ABS,Y
-         8'hA2: decode = { 18'b00000_000000_001_00_01, ALU_LDA , IZ, IMM0 }; // LDX #IMM
-         8'hA6: decode = { 18'b00000_000000_001_00_01, ALU_LDA , IZ, ZPG0 }; // LDX ZP
-         8'hB6: decode = { 18'b00000_000000_001_00_01, ALU_LDA , IY, ZPG0 }; // LDX ZP,Y
-         8'hAC: decode = { 18'b00000_000000_001_00_10, ALU_LDA , IZ, ABS0 }; // LDY ABS
-         8'hBC: decode = { 18'b00000_000000_001_00_10, ALU_LDA , IX, ABS0 }; // LDY ABS,X
-         8'hA0: decode = { 18'b00000_000000_001_00_10, ALU_LDA , IZ, IMM0 }; // LDY #IMM
-         8'hA4: decode = { 18'b00000_000000_001_00_10, ALU_LDA , IZ, ZPG0 }; // LDY ZP
-         8'hB4: decode = { 18'b00000_000000_001_00_10, ALU_LDA , IX, ZPG0 }; // LDY ZP,X
+         8'h00: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, BRK0 }; // BRK
+         8'h4C: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, JMP0 }; // JMP ABS
+         8'h6C: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, IND0 }; // JMP (IDX)
+         8'h7C: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IX, IND0 }; // JMP (IDX,X)
+         8'h20: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, JSR0 }; // JSR ABS
+         8'h40: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, RTI0 }; // RTI
+         8'h60: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, RTS0 }; // RTS
 
-         8'h48: decode = { 18'b00000_000000_000_11_00, ALU_REG , IZ, PHA0 }; // PHA
-         8'h08: decode = { 18'b00000_001000_000_00_00, ALU_REG , IZ, PHA0 }; // PHP
-         8'hDA: decode = { 18'b00000_000000_000_01_00, ALU_REG , IZ, PHA0 }; // PHX
-         8'h5A: decode = { 18'b00000_000000_000_10_00, ALU_REG , IZ, PHA0 }; // PHY
-         8'h68: decode = { 18'b00000_000000_001_00_11, ALU_PLA , IZ, PLA0 }; // PLA
-         8'h28: decode = { 18'b00000_000100_000_00_00, ALU_XXXX, IZ, PLA0 }; // PLP
-         8'hFA: decode = { 18'b00000_000000_001_00_01, ALU_PLA , IZ, PLA0 }; // PLX
-         8'h7A: decode = { 18'b00000_000000_000_00_10, ALU_PLA , IZ, PLA0 }; // PLY
+         8'hAE: decode = { 3'b00_0, LDA, SRC__, DST_X, ALU_LDA , IZ, ABS0 }; // LDX ABS
+         8'hBE: decode = { 3'b00_0, LDA, SRC__, DST_X, ALU_LDA , IY, ABS0 }; // LDX ABS,Y
+         8'hA2: decode = { 3'b00_0, LDA, SRC__, DST_X, ALU_LDA , IZ, IMM0 }; // LDX #IMM
+         8'hA6: decode = { 3'b00_0, LDA, SRC__, DST_X, ALU_LDA , IZ, ZPG0 }; // LDX ZP
+         8'hB6: decode = { 3'b00_0, LDA, SRC__, DST_X, ALU_LDA , IY, ZPG0 }; // LDX ZP,Y
+         8'hAC: decode = { 3'b00_0, LDA, SRC__, DST_Y, ALU_LDA , IZ, ABS0 }; // LDY ABS
+         8'hBC: decode = { 3'b00_0, LDA, SRC__, DST_Y, ALU_LDA , IX, ABS0 }; // LDY ABS,X
+         8'hA0: decode = { 3'b00_0, LDA, SRC__, DST_Y, ALU_LDA , IZ, IMM0 }; // LDY #IMM
+         8'hA4: decode = { 3'b00_0, LDA, SRC__, DST_Y, ALU_LDA , IZ, ZPG0 }; // LDY ZP
+         8'hB4: decode = { 3'b00_0, LDA, SRC__, DST_Y, ALU_LDA , IX, ZPG0 }; // LDY ZP,X
 
-         8'h8E: decode = { 18'b00000_000000_010_01_00, ALU_REG , IZ, ABS0 }; // STX ABS
-         8'h86: decode = { 18'b00000_000000_010_01_00, ALU_REG , IZ, ZPG0 }; // STX ZP
-         8'h96: decode = { 18'b00000_000000_010_01_00, ALU_REG , IY, ZPG0 }; // STX ZP,Y
-         8'h8C: decode = { 18'b00000_000000_010_10_00, ALU_REG , IZ, ABS0 }; // STY ABS
-         8'h84: decode = { 18'b00000_000000_010_10_00, ALU_REG , IZ, ZPG0 }; // STY ZP
-         8'h94: decode = { 18'b00000_000000_010_10_00, ALU_REG , IX, ZPG0 }; // STY ZP,X
+         8'h48: decode = { 3'b00_0, NOP, SRC_A, DST__, ALU_REG , IZ, PHA0 }; // PHA
+         8'hDA: decode = { 3'b00_0, NOP, SRC_X, DST__, ALU_REG , IZ, PHA0 }; // PHX
+         8'h5A: decode = { 3'b00_0, NOP, SRC_Y, DST__, ALU_REG , IZ, PHA0 }; // PHY
+         8'h68: decode = { 3'b00_0, LDA, SRC__, DST_A, ALU_PLA , IZ, PLA0 }; // PLA
+         8'hFA: decode = { 3'b00_0, LDA, SRC__, DST_X, ALU_PLA , IZ, PLA0 }; // PLX
+         8'h7A: decode = { 3'b00_0, LDA, SRC__, DST_Y, ALU_PLA , IZ, PLA0 }; // PLY
+         8'h08: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_REG , IZ, PHA0 }; // PHP
+         8'h28: decode = { 3'b00_0, NOP, SRC__, DST__, ALU_____, IZ, PLA0 }; // PLP
 
-         8'h9C: decode = { 18'b00000_000000_010_00_00, ALU_REG , IZ, ABS0 }; // STZ ABS
-         8'h9E: decode = { 18'b00000_000000_010_00_00, ALU_REG , IX, ABS0 }; // STZ ABS,X
-         8'h64: decode = { 18'b00000_000000_010_00_00, ALU_REG , IZ, ZPG0 }; // STZ ZP
-         8'h74: decode = { 18'b00000_000000_010_00_00, ALU_REG , IX, ZPG0 }; // STZ ZP,X
+         8'h8E: decode = { 3'b00_0, STA, SRC_X, DST__, ALU_REG , IZ, ABS0 }; // STX ABS
+         8'h86: decode = { 3'b00_0, STA, SRC_X, DST__, ALU_REG , IZ, ZPG0 }; // STX ZP
+         8'h96: decode = { 3'b00_0, STA, SRC_X, DST__, ALU_REG , IY, ZPG0 }; // STX ZP,Y
+         8'h8C: decode = { 3'b00_0, STA, SRC_Y, DST__, ALU_REG , IZ, ABS0 }; // STY ABS
+         8'h84: decode = { 3'b00_0, STA, SRC_Y, DST__, ALU_REG , IZ, ZPG0 }; // STY ZP
+         8'h94: decode = { 3'b00_0, STA, SRC_Y, DST__, ALU_REG , IX, ZPG0 }; // STY ZP,X
 
-         8'h1C: decode = { 29'b00000_000000_000_00_00_000000000_00, ABS0 }; // TRB ABS
-         8'h14: decode = { 29'b00000_000000_000_00_00_000000000_00, ZPG0 }; // TRB ZP
-         8'h0C: decode = { 29'b00000_000000_000_00_00_000000000_00, ABS0 }; // TSB ABS
-         8'h04: decode = { 29'b00000_000000_000_00_00_000000000_00, ZPG0 }; // TSB ZP
-       default: decode = { 29'bxxxxx_xxxxxx_xxx_xx_xx_xxxxxxxxx_xx, SYNC }; 
+         8'h9C: decode = { 3'b00_0, STA, SRC_Z, DST__, ALU_REG , IZ, ABS0 }; // STZ ABS
+         8'h9E: decode = { 3'b00_0, STA, SRC_Z, DST__, ALU_REG , IX, ABS0 }; // STZ ABS,X
+         8'h64: decode = { 3'b00_0, STA, SRC_Z, DST__, ALU_REG , IZ, ZPG0 }; // STZ ZP
+         8'h74: decode = { 3'b00_0, STA, SRC_Z, DST__, ALU_REG , IX, ZPG0 }; // STZ ZP,X
+
+         8'h1C: decode = { 25'b00_0_00_00_00_000000000_00, ABS0 }; // TRB ABS
+         8'h14: decode = { 25'b00_0_00_00_00_000000000_00, ZPG0 }; // TRB ZP
+         8'h0C: decode = { 25'b00_0_00_00_00_000000000_00, ABS0 }; // TSB ABS
+         8'h04: decode = { 25'b00_0_00_00_00_000000000_00, ZPG0 }; // TSB ZP
+       default: decode = { 25'bxx_x_xx_xx_xx_xxxxxxxxx_xx, SYNC }; 
     endcase
 /*
  *****************************************************************************
@@ -804,9 +811,9 @@ wire [7:0] Y = regs[SEL_Y];
 wire [7:0] A = regs[SEL_A];
 
 always @( posedge clk ) begin
-    if( !debug || cycle < 50000 || cycle[10:0] == 0 )
-      $display( "%4d %s %s %s PC:%h AB:%h DI:%h HOLD:%h DO:%h DR:%h IR:%h WE:%d ALU:%h S:%02x A:%h X:%h Y:%h R:%h LD:%h P:%s%s1%s%s%s%s%s %d", 
-                 cycle, R_, opcode, statename, PC, AB, DI, DIHOLD, DO, DR, IR, WE, alu_out, S, A, X, Y, R, ld, N_, V_, B_, D_, I_, Z_, C_, alu_C );
+    if( !debug || cycle < 5000 || cycle[10:0] == 0 )
+      $display( "%4d %s %s %s PC:%h AB:%h DI:%h HOLD:%h DO:%h DR:%h IR:%h WE:%d ALU:%h S:%02x A:%h X:%h Y:%h R:%h P:%s%s1%s%s%s%s%s %d", 
+                 cycle, R_, opcode, statename, PC, AB, DI, DIHOLD, DO, DR, IR, WE, alu_out, S, A, X, Y, R, N_, V_, B_, D_, I_, Z_, C_, alu_C );
       if( instruction == 8'hdb )
         $finish( );
 end
