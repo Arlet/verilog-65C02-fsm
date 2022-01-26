@@ -695,109 +695,25 @@ always @*
     default : statename = "?";
     endcase
 
-reg [7:0] instruction;
-reg [23:0] opcode;
-
-always @*
-    casez( instruction )
-            8'b0000_0000: opcode = "BRK";
-            8'b0000_1000: opcode = "PHP";
-            8'b0001_0010: opcode = "ORA";
-            8'b0011_0010: opcode = "AND";
-            8'b0101_0010: opcode = "EOR";
-            8'b0111_0010: opcode = "ADC";
-            8'b1001_0010: opcode = "STA";
-            8'b1011_0010: opcode = "LDA";
-            8'b1101_0010: opcode = "CMP";
-            8'b1111_0010: opcode = "SBC";
-            8'b011?_0100: opcode = "STZ";
-            8'b1001_11?0: opcode = "STZ";
-            8'b0101_1010: opcode = "PHY";
-            8'b1101_1010: opcode = "PHX";
-            8'b0111_1010: opcode = "PLY";
-            8'b1111_1010: opcode = "PLX";
-            8'b000?_??01: opcode = "ORA";
-            8'b0001_0000: opcode = "BPL";
-            8'b0001_1010: opcode = "INA";
-            8'b000?_??10: opcode = "ASL";
-            8'b0001_1000: opcode = "CLC";
-            8'b0010_0000: opcode = "JSR";
-            8'b0010_1000: opcode = "PLP";
-            8'b001?_?100: opcode = "BIT";
-            8'b1000_1001: opcode = "BIT";
-            8'b001?_??01: opcode = "AND";
-            8'b0011_0000: opcode = "BMI";
-            8'b0011_1010: opcode = "DEA";
-            8'b001?_??10: opcode = "ROL";
-            8'b0011_1000: opcode = "SEC";
-            8'b0100_0000: opcode = "RTI";
-            8'b0100_1000: opcode = "PHA";
-            8'b010?_??01: opcode = "EOR";
-            8'b0101_0000: opcode = "BVC";
-            8'b010?_??10: opcode = "LSR";
-            8'b0101_1000: opcode = "CLI";
-            8'b01??_1100: opcode = "JMP";
-            8'b0110_0000: opcode = "RTS";
-            8'b0110_1000: opcode = "PLA";
-            8'b011?_??01: opcode = "ADC";
-            8'b0111_0000: opcode = "BVS";
-            8'b011?_??10: opcode = "ROR";
-            8'b0111_1000: opcode = "SEI";
-            8'b1000_0000: opcode = "BRA";
-            8'b1000_1000: opcode = "DEY";
-            8'b1000_?100: opcode = "STY";
-            8'b1001_0100: opcode = "STY";
-            8'b1000_1010: opcode = "TXA";
-            8'b1001_0010: opcode = "STA";
-            8'b100?_??01: opcode = "STA";
-            8'b1001_0000: opcode = "BCC";
-            8'b1001_1000: opcode = "TYA";
-            8'b1001_1010: opcode = "TXS";
-            8'b100?_?110: opcode = "STX";
-            8'b1010_0000: opcode = "LDY";
-            8'b1010_1000: opcode = "TAY";
-            8'b1010_1010: opcode = "TAX";
-            8'b101?_??01: opcode = "LDA";
-            8'b1011_0000: opcode = "BCS";
-            8'b101?_?100: opcode = "LDY";
-            8'b1011_1000: opcode = "CLV";
-            8'b1011_1010: opcode = "TSX";
-            8'b101?_?110: opcode = "LDX";
-            8'b1010_0010: opcode = "LDX";
-            8'b1100_0000: opcode = "CPY";
-            8'b1100_1000: opcode = "INY";
-            8'b1100_?100: opcode = "CPY";
-            8'b1100_1010: opcode = "DEX";
-            8'b110?_??01: opcode = "CMP";
-            8'b1101_0000: opcode = "BNE";
-            8'b1101_1000: opcode = "CLD";
-            8'b110?_?110: opcode = "DEC";
-            8'b1110_0000: opcode = "CPX";
-            8'b1110_1000: opcode = "INX";
-            8'b1110_?100: opcode = "CPX";
-            8'b1110_1010: opcode = "NOP";
-            8'b111?_??01: opcode = "SBC";
-            8'b1111_0000: opcode = "BEQ";
-            8'b1111_1000: opcode = "SED";
-            8'b111?_?110: opcode = "INC";
-            8'b1101_1011: opcode = "STP";
-            8'b0000_?100: opcode = "TSB";
-            8'b0001_?100: opcode = "TRB";
-
-            default:      opcode = "___";
-    endcase
-
-wire [7:0] R_ = RST ? "R" : "-";
-
-integer cycle;
+reg [7:0] opcode;
+reg [23:0] mnemonic;
 
 always @( posedge clk )
     if( sync )
-        instruction <= IR;
+        opcode <= IR;
 
+/* 
+ * disassembler translates binary opcode into 3 letter mnemonic
+ */
+disas disas( 
+    .opcode(opcode),
+    .mnemonic(mnemonic) );
+
+integer cycle;
 always @( posedge clk )
     cycle <= cycle + 1;
 
+wire [7:0] R_ = RST ? "R" : "-";
 wire [7:0] B_ = B ? "B" : "-";
 wire [7:0] C_ = C ? "C" : "-";
 wire [7:0] D_ = D ? "D" : "-";
@@ -813,8 +729,9 @@ wire [7:0] A = regs[SEL_A];
 always @( posedge clk ) begin
     if( !debug || cycle < 5000 || cycle[10:0] == 0 )
       $display( "%4d %s %s %s PC:%h AB:%h DI:%h HOLD:%h DO:%h DR:%h IR:%h WE:%d ALU:%h S:%02x A:%h X:%h Y:%h R:%h P:%s%s1%s%s%s%s%s %d", 
-                 cycle, R_, opcode, statename, PC, AB, DI, DIHOLD, DO, DR, IR, WE, alu_out, S, A, X, Y, R, N_, V_, B_, D_, I_, Z_, C_, alu_C );
-      if( instruction == 8'hdb )
+                 cycle, R_, mnemonic, statename, PC, AB, DI, DIHOLD, DO, DR, IR, WE, alu_out, S, A, X, Y, R, N_, V_, B_, D_, I_, Z_, C_, alu_C );
+      // end simulation on STP instruction
+      if( opcode == 8'hdb )
         $finish( );
 end
 `endif
