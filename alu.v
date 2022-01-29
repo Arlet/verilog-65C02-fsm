@@ -1,3 +1,9 @@
+/*
+ * alu.v 
+ *
+ * (C) Arlet Ottens, <arlet@c-scape.nl>
+ */
+
 module alu(
     input [8:0] alu_op,
     input [7:0] R,
@@ -17,8 +23,6 @@ reg [7:0] alu_ai;
 reg [7:0] alu_bi;
 reg alu_ci;
 reg alu_si;
-//reg [7:0] alu_out;
-//reg alu_C;
 assign alu_Z = !alu_out;
 assign alu_N = alu_out[7];
 assign alu_V = alu_ai[7] ^  alu_bi[7] ^ alu_C ^ alu_N; 

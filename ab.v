@@ -19,31 +19,6 @@ reg [7:0] ABH;
 reg [7:0] ABL;
 assign AB = { ABH, ABL };
 
-/*
- * ab_op
- *
- * base 00 = S          offset 00 +00
- * base 01 = PC         offset 01 +XY
- * base 10 = DR         offset 10 +DI 
- * base 11 = ab_hold       offset 11 XY+DI 
- * 
- * PC 
- * ---
- * 00 = keep
- * 01 = ABL + 1
- * 10 = fffa
- * 11 = fffe
- *
- * ABH
- * ---
- * base                 offset
- *
- * 00 = zero/stack      +0
- * 01 = PCH             +1
- * 10 = DI              +C
- * 11 = ABHR            -1+C
- */
-
 
 /* 
  * ab_hold stores a copy of current address to be used
