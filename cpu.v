@@ -326,8 +326,8 @@ always @*
        IDX1:                    bus_op = { S____, IDX___, DO____, DR_DI, WE___, AB_NEXT };			
        IDX2:                    bus_op = { S____, IDX__Y, DO_ALU, DR___, WE_ST, AB_ABSX };			
        IMM0:                    bus_op = { S____, IDX___, DO____, DR_DI, WE___, AB_OPER };			
-       IND0:                    bus_op = { S____, IDX_X_, DO____, DR_DI, WE___, AB_OPER };			
-       IND1:                    bus_op = { S____, IDX___, DO____, DR___, WE___, AB_JMP0 };			
+       IND0:                    bus_op = { S____, IDX___, DO____, DR_DI, WE___, AB_OPER };			
+       IND1:                    bus_op = { S____, IDX_X_, DO____, DR___, WE___, AB_JMP0 };			
        JMP0:                    bus_op = { S____, IDX___, DO____, DR_DI, WE___, AB_OPER };			
        JMP1:                    bus_op = { S____, IDX___, DO____, DR___, WE___, AB_JMP0 };			
        JSR0:                    bus_op = { S_DEC, IDX___, DO_PCH, DR_DI, WE_1_, AB_PUSH };			
